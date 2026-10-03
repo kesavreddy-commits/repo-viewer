@@ -1,7 +1,9 @@
 {
-  "name": "repo-viewer",
-  "description": "repo-viewer: a repo browser and editor pane for the Claude Code terminal",
-  "owner": { "name": "Kesav Reddy Eswaravaka" },
+  "name": "kesav",
+  "description": "Kesav's Claude Code plugins",
+  "owner": {
+    "name": "Kesav Reddy Eswaravaka"
+  },
   "plugins": [
     {
       "name": "repo-viewer",
