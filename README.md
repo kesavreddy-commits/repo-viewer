@@ -13,6 +13,8 @@ answer to the desktop app's file pane.
 
 ## Run it
 
+Double-click `repo-view.command` in Finder (or `./repo-view.command ~/some/repo`), or:
+
 ```bash
 claude --plugin-dir ~/claudecodemods/mod1 --settings '{"tui":"fullscreen"}'
 ```
