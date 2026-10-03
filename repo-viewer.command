@@ -1,6 +1,6 @@
 #!/bin/zsh -l
-# Opens Claude Code with the canopy mod in the repo you pass (default: this one).
-# Double-click it in Finder, or: ./canopy.command ~/some/repo
+# Opens Claude Code with the repo-viewer mod in the repo you pass (default: this one).
+# Double-click it in Finder, or: ./repo-viewer.command ~/some/repo
 MOD="${0:A:h}"
 cd "${1:-$MOD}" || exit 1
 # Widen the window so the pane docks beside the transcript (xterm window op; Terminal.app honours it).

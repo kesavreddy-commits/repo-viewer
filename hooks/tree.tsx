@@ -30,6 +30,10 @@ export type TreeCtx = {
   changedCount: number // files with a git mark
   touchedCount: number
   actions: TreeActions
+  /** Drawn in place of the rows and the hint: the pane's keyboard Client, where the surface has one. */
+  body?: RenderElement
+  /** Extra toolbar buttons (the keyboard-only h/j/k/l moves). */
+  tools?: RenderElement[]
 }
 
 /** Most rows drawn; the rest collapse into a dim "… N more". */
@@ -360,18 +364,18 @@ export function Tree(el: ElementTable, ctx: TreeCtx): RenderElement {
   const collapseLabel = W >= 44 ? 'collapse all' : 'collapse'
   const toolbar = (
     <Box flexDirection="row" columnGap={2} flexWrap="wrap">
-      <Button key="tb:refresh" plain hotkey="g" label="refresh" onPress={() => actions.refresh()} />
+      <Button key="tb:refresh" plain label="refresh" onPress={() => actions.refresh()} />
       <Button
         key="tb:collapse"
         plain
-        hotkey="c"
+       
         label={collapseLabel}
         onPress={() => actions.collapseAll()}
       />
       <Button
         key="tb:follow"
         plain
-        hotkey="f"
+       
         dimColor={!view.follow}
         label={`follow ${view.follow ? 'on' : 'off'}`}
         onPress={() => actions.toggleFollow()}
@@ -419,6 +423,23 @@ export function Tree(el: ElementTable, ctx: TreeCtx): RenderElement {
   // 5. Hint.
   const hintFull = '↑↓ move · ⏎ open · ctrl+x tab focus'
   const hint = strWidth(hintFull) <= W ? hintFull : fit('↑↓ move · ⏎ open', W)
+
+  if (ctx.body) {
+    return (
+      <Box flexDirection="column">
+        {header}
+        {counts}
+        {finder}
+        {toolbar}
+        {ctx.tools && ctx.tools.length > 0 ? (
+          <Box flexDirection="row" flexWrap="wrap" columnGap={2}>
+            {ctx.tools}
+          </Box>
+        ) : null}
+        {ctx.body}
+      </Box>
+    )
+  }
 
   return (
     <Box flexDirection="column">

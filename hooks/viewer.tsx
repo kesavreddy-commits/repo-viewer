@@ -26,6 +26,8 @@ export type ViewerCtx = {
   mark?: GitMark
   isTouched: boolean
   actions: ViewerActions
+  /** Drawn in place of the body and footer: the pane's keyboard Client, where the surface has one. */
+  body?: RenderElement
 }
 
 /** Code.source and Markdown.text are refused above 10000 characters. */
@@ -158,7 +160,7 @@ export function Viewer(el: ElementTable, ctx: ViewerCtx): RenderElement {
   const path = fitPath(doc.path, Math.max(8, columns - backWidth - 1 - tail))
   const header = (
     <Box flexDirection="row" gap={1}>
-      <Button key="back" label="‹ back" hotkey="b" plain onPress={() => actions.back()} />
+      <Button key="back" label="‹ back" plain onPress={() => actions.back()} />
       <Box flexDirection="row">
         {path.dir ? <Text dimColor>{path.dir}</Text> : null}
         <Text bold>{path.base}</Text>
@@ -196,22 +198,22 @@ export function Viewer(el: ElementTable, ctx: ViewerCtx): RenderElement {
   // 3. Toolbar: only the buttons that apply.
   const buttons: RenderElement[] = []
   if (isPaged && current > 0) {
-    buttons.push(<Button key="prev" label="‹ prev" hotkey="p" plain onPress={() => actions.setPage(current - 1)} />)
+    buttons.push(<Button key="prev" label="‹ prev" plain onPress={() => actions.setPage(current - 1)} />)
   }
   if (isPaged && current < pageCount - 1) {
-    buttons.push(<Button key="next" label="next ›" hotkey="n" plain onPress={() => actions.setPage(current + 1)} />)
+    buttons.push(<Button key="next" label="next ›" plain onPress={() => actions.setPage(current + 1)} />)
   }
   if (isMarkdown && !showingDiff) {
     buttons.push(
-      <Button key="raw" label={view.isRaw ? 'rendered' : 'raw'} hotkey="r" plain onPress={() => actions.toggleRaw()} />,
+      <Button key="raw" label={view.isRaw ? 'rendered' : 'raw'} plain onPress={() => actions.toggleRaw()} />,
     )
   }
   if (canDiff) {
     buttons.push(
-      <Button key="diff" label={showingDiff ? 'file' : 'diff'} hotkey="d" plain onPress={() => actions.toggleDiff()} />,
+      <Button key="diff" label={showingDiff ? 'file' : 'diff'} plain onPress={() => actions.toggleDiff()} />,
     )
   }
-  buttons.push(<Button key="reveal" label="reveal" hotkey="t" plain onPress={() => actions.reveal()} />)
+  buttons.push(<Button key="reveal" label="reveal" plain onPress={() => actions.reveal()} />)
   const toolbar = (
     <Box flexDirection="row" flexWrap="wrap" columnGap={2}>
       {buttons}
@@ -270,6 +272,17 @@ export function Viewer(el: ElementTable, ctx: ViewerCtx): RenderElement {
     const first = ctx.page.startLine
     const last = first + Math.max(1, countLines(ctx.page.text)) - 1
     footer = `lines ${first}–${last} of ${doc.lineCount}`
+  }
+
+  if (ctx.body) {
+    return (
+      <Box flexDirection="column">
+        {header}
+        {meta}
+        {toolbar}
+        {ctx.body}
+      </Box>
+    )
   }
 
   return (

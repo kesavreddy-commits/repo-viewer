@@ -1,7 +1,22 @@
 {
-  "name": "canopy",
-  "version": "0.1.0",
-  "description": "A repo browser pane for the terminal: file tree with git and Claude-edit markers, fuzzy find, syntax-highlighted file view, rendered markdown, diffs and images",
+  "name": "repo-viewer",
+  "version": "1.0.0",
+  "description": "Browse, read and edit your whole repo in a pane beside Claude Code's transcript: file tree with git and Claude-edit markers, fuzzy find, highlighted view, markdown, diffs, and an in-pane editor",
+  "author": {
+    "name": "Kesav Reddy Eswaravaka",
+    "url": "https://github.com/kesavreddy-commits"
+  },
+  "homepage": "https://github.com/kesavreddy-commits/repo-viewer",
+  "repository": "https://github.com/kesavreddy-commits/repo-viewer",
+  "license": "MIT",
+  "keywords": [
+    "mod",
+    "file-tree",
+    "file-browser",
+    "editor",
+    "pane",
+    "terminal"
+  ],
   "types": "./types/index.d.ts",
   "userConfig": {
     "autoOpen": {
@@ -15,6 +30,12 @@
       "title": "Follow Claude's edits",
       "description": "Show each file Claude edits in the pane as it happens",
       "default": true
+    },
+    "width": {
+      "type": "number",
+      "title": "Pane width",
+      "description": "Share of the terminal the docked pane asks for, in percent (20-70; at least 44 columns, and Claude keeps 70). Dragging the divider wins",
+      "default": 40
     }
   }
 }

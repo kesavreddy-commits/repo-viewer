@@ -22,10 +22,15 @@ const ok = (stdout: string) => value({ exitCode: 0, stdout, stderr: '', isStdout
 const fail = () => value({ exitCode: 1, stdout: '', stderr: 'no', isStdoutTruncated: false, isStderrTruncated: false })
 
 const relOf = (path: string) => (path.startsWith(`${ROOT}/`) ? path.slice(ROOT.length + 1) : path)
-const isDir = (rel: string) => rel === ROOT || Object.keys(FILES).some(file => file.startsWith(`${rel}/`))
 
-export function fixture(on: On) {
+/** What the plugin did beneath it, for the tests to check. */
+export type Seen = { open: Set<string>; closes: number; filled: string[]; written: Record<string, string> }
+
+export function fixture(on: On, files: Record<string, string> = { ...FILES }) {
   const open = new Set<string>()
+  const seen: Seen = { open, closes: 0, filled: [], written: {} }
+  const mtimes: Record<string, number> = {}
+  const isDir = (rel: string) => rel === ROOT || Object.keys(files).some(file => file.startsWith(`${rel}/`))
 
   on('session.cwd', () => value(ROOT))
   on('clock.now', () => value(1_000))
@@ -36,6 +41,7 @@ export function fixture(on: On) {
   })
   on('ui.close', (_$, e) => {
     open.delete(e.id)
+    seen.closes += 1
     return value(undefined)
   })
   on('ui.scroll', () => ({}))
@@ -44,7 +50,7 @@ export function fixture(on: On) {
   on('process.run', (_$, e) => {
     const args = e.argv.filter(arg => arg !== '--no-optional-locks').slice(1).join(' ')
     if (args === 'rev-parse --show-toplevel') return ok(`${ROOT}\n`)
-    if (args.startsWith('ls-files')) return ok(Object.keys(FILES).join('\0') + '\0')
+    if (args.startsWith('ls-files')) return ok(Object.keys(files).join('\0') + '\0')
     if (args === 'symbolic-ref --short -q HEAD') return ok('main\n')
     if (args === 'rev-parse --short HEAD') return ok('abc1234\n')
     if (args.startsWith('status')) return ok(STATUS)
@@ -54,17 +60,36 @@ export function fixture(on: On) {
 
   on('fs.stat', (_$, e) => {
     const rel = relOf(e.path)
-    const text = FILES[rel]
-    if (text !== undefined) return value({ kind: 'file' as const, size: text.length, mtimeMs: 1, isLink: false })
+    const text = files[rel]
+    if (text !== undefined) return value({ kind: 'file' as const, size: text.length, mtimeMs: mtimes[rel] ?? 1, isLink: false })
     if (isDir(rel)) return value({ kind: 'dir' as const, size: 0, mtimeMs: 0, isLink: false })
     return { deny: `ENOENT: ${e.path}` }
   })
-  on('fs.exists', (_$, e) => value(FILES[relOf(e.path)] !== undefined || isDir(relOf(e.path))))
+  on('fs.exists', (_$, e) => value(files[relOf(e.path)] !== undefined || isDir(relOf(e.path))))
   on('fs.read', (_$, e) => {
-    const text = FILES[relOf(e.path)]
+    const text = files[relOf(e.path)]
     return text === undefined ? { deny: `ENOENT: ${e.path}` } : value(text)
   })
-  return { open }
+  on('fs.write', (_$, e) => {
+    const rel = relOf(e.path)
+    files[rel] = e.text
+    seen.written[rel] = e.text
+    mtimes[rel] = (mtimes[rel] ?? 1) + 1
+    return value(undefined)
+  })
+  on('prompt.fill', (_$, e) => {
+    seen.filled.push(e.text)
+    return { isFilled: true }
+  })
+  return {
+    ...seen,
+    seen,
+    /** Someone else changes a file on disk. */
+    touch(rel: string, text: string) {
+      files[rel] = text
+      mtimes[rel] = (mtimes[rel] ?? 1) + 100
+    },
+  }
 }
 
 export const run = (command: string, args = '') => ({

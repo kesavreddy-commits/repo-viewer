@@ -1,4 +1,4 @@
-// canopy's type contract: every value it keeps in $.state, and the shapes
+// repo-viewer's type contract: every value it keeps in $.state, and the shapes
 // its modules hand each other. Paths are repo-relative with '/' separators.
 
 /** A file's git state: Modified, Added, Deleted, Renamed, untracked (?), conflict (U). */
@@ -117,6 +117,10 @@ export type NavOp =
   | { op: 'diff' }
   | { op: 'edit'; path: string; isEditing: boolean }
   | { op: 'save'; path: string; text: string; baseMtimeMs: number; force: boolean }
+  /** A character typed outside the editor: it goes to Claude Code's prompt, and the keys go back there. */
+  | { op: 'type'; text: string }
+  /** Hand the keys back to Claude Code's prompt (← at the tree's top level). */
+  | { op: 'leave' }
 
 
 /** One row the tree draws. */
@@ -157,7 +161,7 @@ export type DocPage = { text: string; startLine: number; pageCount: number }
 
 declare module 'claude-code' {
   interface PluginState {
-    'canopy': {
+    'repo-viewer': {
       index: RepoIndex | null
       /** path → mark, from `git status`. */
       git: Record<string, GitMark>

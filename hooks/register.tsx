@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { DocPage, FileDoc, GitMark, RepoIndex, RepoView } from '../types'
+import type { DocPage, FileDoc, GitMark, NavFile, NavOp, NavProps, NavRow, RepoIndex, RepoView, TreeRow } from '../types'
 import {
   IGNORED_DIRS,
   MAX_FILES,
@@ -21,13 +21,20 @@ import {
 import { Tree } from './tree'
 import { Viewer } from './viewer'
 
-const PANE = 'canopy'
-const TOOL = 'mcp__canopy__show_file'
-/** `/files` is the name the CLI's feature request asked for; `/repo` the short one. */
-const COMMANDS = ['repo', 'files'] as const
+const PANE = 'repo-viewer'
+const TOOL = 'mcp__repo-viewer__show_file'
+/** `/files` is the name the CLI's feature request asked for; `/repo` the short one; `/repo-viewer` its own. */
+const COMMANDS = ['files', 'repo', 'repo-viewer'] as const
 const EDIT_TOOLS = new Set(['Edit', 'Write', 'NotebookEdit'])
 /** How often the pane notices changes made outside Claude (another editor, a git checkout). */
 const POLL_MS = 8000
+/** A file at most this long goes to the pane's Client whole, and can be edited there. */
+const NAV_MAX_TEXT = 90000
+/** Characters of tree rows handed to the Client (its props are bounded at 100,000). */
+const NAV_ROW_BUDGET = 60000
+/** Rows the hooks-drawn chrome takes above the Client: tree header, counts, finder, toolbar; viewer header, meta, toolbar. */
+const TREE_CHROME = 4
+const FILE_CHROME = 3
 
 const DEFAULT_VIEW: RepoView = {
   mode: 'tree',
@@ -42,15 +49,47 @@ const DEFAULT_VIEW: RepoView = {
   lineAt: 0,
 }
 
-const index = atom({ plugin: 'canopy', key: 'index' } as const, null)
-const git = atom({ plugin: 'canopy', key: 'git' } as const, {})
-const touched = atom({ plugin: 'canopy', key: 'touched' } as const, {})
-const view = atom({ plugin: 'canopy', key: 'view' } as const, DEFAULT_VIEW)
-const revision = atom({ plugin: 'canopy', key: 'revision' } as const, 0)
+const index = atom({ plugin: 'repo-viewer', key: 'index' } as const, null)
+const git = atom({ plugin: 'repo-viewer', key: 'git' } as const, {})
+const touched = atom({ plugin: 'repo-viewer', key: 'touched' } as const, {})
+const view = atom({ plugin: 'repo-viewer', key: 'view' } as const, DEFAULT_VIEW)
+const revision = atom({ plugin: 'repo-viewer', key: 'revision' } as const, 0)
 
 type Engine = EngineInterface
 
 const setView = ($: Engine, change: (v: RepoView) => RepoView) => update($, view, change)
+
+/** The terminal's width as last measured, and the width it was when the dock was last sized. */
+let termColumns = 0
+let sizedFor = 0
+let widthPercent = 40
+
+/** The dock width to ask for: 40% of the terminal, at least 44 columns so code stays readable, at
+ * most 100 so a wide screen keeps its transcript, and never leaving Claude under 70 columns. Below
+ * that (a terminal of about 115 columns or less) it asks for nothing and the engine's share stands. */
+function paneWidth(): number | undefined {
+  if (termColumns <= 0) return undefined
+  const want = Math.min(100, Math.max(44, Math.round((termColumns * widthPercent) / 100)), termColumns - 70)
+  return want >= 44 ? want : undefined
+}
+
+/** Opens (or retitles and resizes) the pane, floor to ceiling on the right when docked. */
+async function openPane($: Engine, focus = false) {
+  const repo = await read($, index)
+  const columns = paneWidth()
+  if (columns !== undefined) sizedFor = termColumns
+  return $.ui.open({
+    id: PANE,
+    title: repo ? baseName(repo.root) : 'Repo',
+    ...(columns !== undefined ? { columns } : {}),
+    ...(focus ? { focus: true as const } : {}),
+  })
+}
+
+async function notify($: Engine, text: string, tone: 'info' | 'warn' | 'error') {
+  const at = await $.clock.now().catch(() => 0)
+  await setView($, v => ({ ...v, notice: { text, tone, at } }))
+}
 
 // ---------------------------------------------------------------------------
 // Host I/O. The engine follows `$` only into functions of this file, so every
@@ -177,11 +216,108 @@ async function showFile($: Engine, path: string, line?: number) {
     mode: 'file',
     openPath: path,
     cursor: path,
+    cursorAt: v.cursorAt + 1,
     page,
     showDiff: false,
+    editing: v.editing === path ? v.editing : undefined,
+    // A line only comes with show_file; a file opened any other way starts at its top.
+    ...(line !== undefined ? { line, lineAt: v.lineAt + 1 } : { line: undefined }),
     expanded: [...new Set([...v.expanded, ...parentDirs(path)])],
   }))
-  await $.ui.open({ id: PANE, title: repo ? baseName(repo.root) : 'Repo' })
+  await openPane($)
+}
+
+const collapsed = (expanded: string[], dir: string) =>
+  expanded.filter(open => open !== dir && !open.startsWith(`${dir}/`))
+
+/** Hands the keys back to Claude Code's prompt. There is no call for that, but closing a focused
+ * pane gives the prompt the keys, and reopening it unasked puts the pane back without taking them. */
+async function leavePane($: Engine) {
+  await $.ui.close({ id: PANE })
+  await openPane($)
+}
+
+/** Writes the Client's buffer back, refusing when the file changed on disk since it was opened. */
+async function saveFile($: Engine, op: Extract<NavOp, { op: 'save' }>) {
+  const repo = await read($, index)
+  if (!repo) return
+  const path = toRepoPath(repo.root, repo.root, op.path)
+  if (path === undefined || path !== op.path) return notify($, `${op.path} is outside the repo`, 'error')
+  const abs = `${repo.root}/${path}`
+  const stat = await $.fs.stat(abs).catch(() => undefined)
+  if (stat && !op.force && Math.abs(stat.mtimeMs - op.baseMtimeMs) > 1) {
+    return notify($, `${path} changed on disk: ctrl+s again overwrites it`, 'warn')
+  }
+  let text = op.text
+  // The pane edits normalised text: give the file back its CRLF endings and BOM.
+  const before = stat ? await $.fs.read(abs).catch(() => '') : ''
+  if (before.includes('\r\n') && !text.includes('\r\n')) text = text.replace(/\n/g, '\r\n')
+  if (before.charCodeAt(0) === 0xfeff && text.charCodeAt(0) !== 0xfeff) text = `\ufeff${text}`
+  try {
+    await $.fs.write(abs, text)
+  } catch (error) {
+    return notify($, `could not save ${path}: ${errText(error, 'write failed')}`, 'error')
+  }
+  await notify($, `saved ${path}`, 'info')
+  await update($, revision, n => n + 1)
+  await refreshGit($)
+}
+
+/** One op from the pane's Client: a key press or a click the person made there. */
+async function handleOp($: Engine, op: NavOp) {
+  switch (op.op) {
+    case 'cursor':
+      return setView($, v => ({ ...v, cursor: op.path }))
+    case 'open':
+      return showFile($, op.path)
+    case 'toggle':
+      return setView($, v => ({
+        ...v,
+        cursor: op.path,
+        expanded: v.expanded.includes(op.path) ? collapsed(v.expanded, op.path) : [...v.expanded, op.path],
+      }))
+    case 'expand':
+      return setView($, v => ({ ...v, cursor: op.path, expanded: v.expanded.includes(op.path) ? v.expanded : [...v.expanded, op.path] }))
+    case 'collapse':
+      return setView($, v => ({ ...v, cursor: op.path, expanded: collapsed(v.expanded, op.path) }))
+    case 'back':
+      return setView($, v => ({ ...v, mode: 'tree', editing: undefined, cursor: v.openPath ?? v.cursor, cursorAt: v.cursorAt + 1 }))
+    case 'page':
+      return setView($, v => ({ ...v, page: Math.max(0, op.page) }))
+    case 'raw':
+      return setView($, v => ({ ...v, isRaw: !v.isRaw }))
+    case 'diff':
+      return setView($, v => ({ ...v, showDiff: !v.showDiff }))
+    case 'edit':
+      return setView($, v => ({ ...v, editing: op.isEditing ? op.path : undefined }))
+    case 'save':
+      return saveFile($, op)
+    case 'type':
+      // Typing outside the editor is meant for Claude: put it in the prompt and give the prompt the keys.
+      await $.prompt.fill({ text: op.text, mode: 'insert' })
+      return leavePane($)
+    case 'leave':
+      return leavePane($)
+  }
+}
+
+/** A Client's props must be plain JSON: drop the optional fields that are unset (undefined is refused). */
+function plain<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T
+}
+
+/** Tree rows in the Client's compact form, cut to fit its props. */
+function navRows(rows: TreeRow[]): { rows: NavRow[]; sent: number } {
+  const out: NavRow[] = []
+  let budget = NAV_ROW_BUDGET
+  for (const row of rows) {
+    const flags = `${row.kind === 'dir' ? 'd' : ''}${row.isExpanded ? 'o' : ''}${row.hasChanges ? 'c' : ''}${row.isTouched ? 't' : ''}${row.mark ?? ''}`
+    const matches = row.matches?.flat()
+    budget -= row.path.length + flags.length + 12 + (matches?.length ?? 0) * 4
+    if (budget < 0) break
+    out.push(matches ? [row.path, row.depth, flags, matches] : [row.path, row.depth, flags])
+  }
+  return { rows: out, sent: out.length }
 }
 
 const baseName = (path: string) => path.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || path
@@ -200,21 +336,20 @@ async function resolveArg($: Engine, arg: string) {
 }
 
 /** /repo and /files: no argument toggles the pane; a file opens it, a folder reveals it, anything else searches. */
-async function runCommand($: Engine, args: string): Promise<{ text?: string }> {
+async function runCommand($: Engine, args: string, columns: number): Promise<{ text?: string }> {
   const arg = args.trim()
+  if (columns > 0) termColumns = columns
   const panes = await $.ui.panes()
   const isOpen = panes.some(pane => pane.id === PANE && pane.isPlaced)
   if (!(await read($, index))) await refreshAll($)
-  const repo = await read($, index)
-  const title = repo ? baseName(repo.root) : 'Repo'
 
   if (arg === '') {
     if (isOpen) {
       await $.ui.close({ id: PANE })
       return {}
     }
-    const opened = await $.ui.open({ id: PANE, title, focus: true })
-    return opened.isPlaced ? {} : { text: `canopy: could not open the pane (${opened.reason})` }
+    const opened = await openPane($, true)
+    return opened.isPlaced ? {} : { text: `repo-viewer: could not open the pane (${opened.reason})` }
   }
 
   const target = await resolveArg($, arg)
@@ -226,12 +361,13 @@ async function runCommand($: Engine, args: string): Promise<{ text?: string }> {
       mode: 'tree',
       filter: '',
       cursor: target.value,
+      cursorAt: v.cursorAt + 1,
       expanded: [...new Set([...v.expanded, ...parentDirs(target.value), target.value])],
     }))
   } else {
     await setView($, v => ({ ...v, mode: 'tree', filter: target.value }))
   }
-  await $.ui.open({ id: PANE, title, focus: true })
+  await openPane($, true)
   return {}
 }
 
@@ -240,7 +376,7 @@ export const register: Register = (on, options) => {
     for (const name of COMMANDS) {
       await $.command.register({
         name,
-        description: `Browse the repo in a side pane: /${name} toggles it, /${name} <file|folder|query> jumps there`,
+        description: `Browse the repo in a side pane: /${name} to toggle, /${name} <file|folder|query> to jump`,
         argumentHint: '[file|folder|query]',
         // Opens the pane mid-turn too, so you can watch Claude's edits land.
         immediate: true,
@@ -249,7 +385,7 @@ export const register: Register = (on, options) => {
     await $.tool.register({
       name: 'show_file',
       description:
-        "Show a file to the user in the canopy pane beside the conversation (syntax-highlighted, markdown rendered). Use when the user asks to see, open or look at a file, or to point them at the code you're discussing. Does not return the file's content.",
+        "Show a file to the user in the repo-viewer pane beside the conversation (syntax-highlighted, markdown rendered). Use when the user asks to see, open or look at a file, or to point them at the code you're discussing. Does not return the file's content.",
       inputSchema: {
         type: 'object',
         properties: {
@@ -260,14 +396,12 @@ export const register: Register = (on, options) => {
       },
     })
     if (options.follow === false) await setView($, v => ({ ...v, follow: false }))
+    if (typeof options.width === 'number' && options.width >= 20 && options.width <= 70) widthPercent = options.width
 
     // Loading the file list can take a moment in a big repo: never hold the first prompt for it.
     $.clock.after(0, () => {
       void refreshAll($).then(async () => {
-        if (options.autoOpen !== false) {
-          const repo = await read($, index)
-          await $.ui.open({ id: PANE, title: repo ? baseName(repo.root) : 'Repo' })
-        }
+        if (options.autoOpen !== false) await openPane($)
       })
     })
     let lastSeen = 0
@@ -294,8 +428,15 @@ export const register: Register = (on, options) => {
     return done
   })
 
-  on('command.run', { command: 'repo' }, ($, e) => runCommand($, e.args))
-  on('command.run', { command: 'files' }, ($, e) => runCommand($, e.args))
+  on('command.run', { command: 'files' }, ($, e) => runCommand($, e.args, e.presentation.columns))
+  on('command.run', { command: 'repo' }, ($, e) => runCommand($, e.args, e.presentation.columns))
+  on('command.run', { command: 'repo-viewer' }, ($, e) => runCommand($, e.args, e.presentation.columns))
+
+  on('ui.message', async ($, e, next) => {
+    if (e.requestId !== PANE || e.element !== 'nav') return next(e)
+    await handleOp($, e.data as NavOp)
+    return {}
+  })
 
   on('tool.call', { tool: TOOL }, async ($, e) => {
     const input = e as unknown as { path?: unknown; line?: unknown }
@@ -324,12 +465,14 @@ export const register: Register = (on, options) => {
         current && !current.files.includes(path) ? { ...current, files: [...current.files, path].sort() } : current,
       )
     }
-    if ((await read($, view)).follow) {
+    const now = await read($, view)
+    if (now.follow && now.editing === undefined) {
       await setView($, v => ({
         ...v,
         mode: 'file',
         openPath: path,
         cursor: path,
+        cursorAt: v.cursorAt + 1,
         page: v.openPath === path ? v.page : 0,
         expanded: [...new Set([...v.expanded, ...parentDirs(path)])],
       }))
@@ -352,13 +495,66 @@ export const register: Register = (on, options) => {
     const rows = e.props.scroll.bodyRows
     const [repo, marks, edits, current] = [await read($, index), await read($, git), await read($, touched), await read($, view)]
 
+    // Docked: the terminal is the transcript beside the pane, the pane, and the divider between.
+    // Size the dock once per terminal width, so a width the person drags stays theirs.
+    if (e.props.placement === 'dock' && e.viewport?.columns) {
+      termColumns = e.viewport.columns + columns + 1
+      if (termColumns !== sizedFor && paneWidth() !== undefined) {
+        sizedFor = termColumns
+        $.clock.after(0, () => void openPane($))
+      }
+    }
+
+    // The keyboard Client: terminal and desktop draw one; the editor's surfaces fall back to buttons.
+    const hasClient = (e.surface === 'terminal' || e.surface === 'desktop') && 'Client' in el
+    const nav = (props: NavProps, height: number) =>
+      'Client' in el ? <el.Client key="nav" module="./nav.tsx" props={plain(props)} height={height} /> : undefined
+    const navBase = {
+      columns,
+      surface: e.surface === 'desktop' ? ('desktop' as const) : ('terminal' as const),
+      cursor: current.cursor,
+      cursorAt: current.cursorAt,
+      line: current.line,
+      lineAt: current.lineAt,
+      editing: current.editing,
+      notice: current.notice,
+    }
+
     if (current.mode === 'file' && current.openPath && repo) {
       await read($, revision)
       const path = current.openPath
       const doc = await loadDoc($, repo.root, path)
-      const page: DocPage | undefined =
-        doc.kind === 'text' || doc.kind === 'markdown' ? pageOf(doc, current.page) : undefined
+      const isText = doc.kind === 'text' || doc.kind === 'markdown'
+      const isWhole = isText && (doc.text?.length ?? 0) <= NAV_MAX_TEXT
+      // The Client holds a file up to NAV_MAX_TEXT whole and scrolls it itself; past that, and without a Client, it pages.
+      const page: DocPage | undefined = !isText
+        ? undefined
+        : hasClient && isWhole
+          ? { text: doc.text ?? '', startLine: 1, pageCount: 1 }
+          : pageOf(doc, current.page)
       const diff = current.showDiff ? await loadDiff($, repo.root, path) : undefined
+      let body: ReturnType<typeof nav>
+      if (hasClient && doc.kind !== 'image') {
+        const shown = isWhole ? { text: doc.text ?? '', startLine: 1, pageCount: 1 } : page
+        const file: NavFile = {
+          path,
+          kind: doc.kind,
+          text: shown?.text,
+          startLine: shown?.startLine ?? 1,
+          page: isWhole ? 0 : Math.min(current.page, (shown?.pageCount ?? 1) - 1),
+          pageCount: shown?.pageCount ?? 1,
+          lineCount: doc.lineCount,
+          size: doc.size,
+          mtimeMs: doc.mtimeMs,
+          isEditable: isWhole,
+          isRaw: current.isRaw,
+          showDiff: current.showDiff,
+          diff,
+          mark: marks[path],
+          isTouched: (edits[path] ?? 0) > 0,
+        }
+        body = nav({ ...navBase, mode: 'file', rows: Math.max(4, rows - FILE_CHROME), file }, Math.max(4, rows - FILE_CHROME))
+      }
       return Viewer(el, {
         surface: e.surface,
         columns,
@@ -369,8 +565,9 @@ export const register: Register = (on, options) => {
         view: current,
         mark: marks[path],
         isTouched: (edits[path] ?? 0) > 0,
+        body,
         actions: {
-          back: () => void setView($, v => ({ ...v, mode: 'tree' })),
+          back: () => void handleOp($, { op: 'back' }),
           setPage: page => void setView($, v => ({ ...v, page: Math.max(0, page) })),
           toggleRaw: () => void setView($, v => ({ ...v, isRaw: !v.isRaw })),
           toggleDiff: () => void setView($, v => ({ ...v, showDiff: !v.showDiff })),
@@ -379,7 +576,9 @@ export const register: Register = (on, options) => {
               ...v,
               mode: 'tree',
               filter: '',
+              editing: undefined,
               cursor: path,
+              cursorAt: v.cursorAt + 1,
               expanded: [...new Set([...v.expanded, ...parentDirs(path)])],
             })).then(() => $.clock.after(50, () => void $.ui.scroll({ to: { key: `row:${path}` }, in: PANE, block: 'center' })))
           },
@@ -388,41 +587,45 @@ export const register: Register = (on, options) => {
     }
 
     const isFiltering = current.filter.trim() !== ''
-    const expanded = new Set(current.expanded)
     const listed = !repo
       ? { rows: [], total: 0 }
       : isFiltering
         ? filterRows(repo, current.filter, marks, edits)
-        : { rows: treeRows(repo, expanded, marks, edits), total: 0 }
+        : { rows: treeRows(repo, new Set(current.expanded), marks, edits), total: 0 }
+
+    let body: ReturnType<typeof nav>
+    if (hasClient) {
+      const compact = navRows(listed.rows)
+      const total = isFiltering ? Math.max(listed.total, listed.rows.length) : listed.rows.length
+      const height = Math.max(4, rows - TREE_CHROME)
+      body = nav(
+        {
+          ...navBase,
+          mode: 'tree',
+          rows: height,
+          tree: repo ? { rows: compact.rows, more: total - compact.sent, isFiltering, query: current.filter } : undefined,
+        },
+        height,
+      )
+    }
 
     return Tree(el, {
       surface: e.surface,
       columns,
       rows,
       index: repo,
-      rows_: listed.rows,
+      rows_: hasClient ? [] : listed.rows,
       total: listed.total,
       view: current,
       changedCount: Object.keys(marks).length,
       touchedCount: Object.keys(edits).length,
+      body,
       actions: {
-        press: row => {
-          if (row.kind === 'dir') {
-            void setView($, v => ({
-              ...v,
-              cursor: row.path,
-              expanded: v.expanded.includes(row.path)
-                ? v.expanded.filter(dir => dir !== row.path && !dir.startsWith(`${row.path}/`))
-                : [...v.expanded, row.path],
-            }))
-          } else {
-            void showFile($, row.path)
-          }
-        },
+        press: row => void handleOp($, row.kind === 'dir' ? { op: 'toggle', path: row.path } : { op: 'open', path: row.path }),
         setFilter: query => void setView($, v => ({ ...v, filter: query })),
         collapseAll: () => void setView($, v => ({ ...v, expanded: [], filter: '' })),
         refresh: () => {
-          void refreshAll($).then(() => $.ui.toast('canopy: refreshed'))
+          void refreshAll($).then(() => $.ui.toast('repo-viewer: refreshed'))
         },
         toggleFollow: () => void setView($, v => ({ ...v, follow: !v.follow })),
         openFirstMatch: () => {
