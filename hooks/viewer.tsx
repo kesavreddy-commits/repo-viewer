@@ -11,6 +11,8 @@ export type ViewerActions = {
   toggleDiff(): void
   /** Show this file in the tree. */
   reveal(): void
+  /** Our own close button, beside the engine's ✕. */
+  close(): void
 }
 
 export type ViewerCtx = {
@@ -25,6 +27,8 @@ export type ViewerCtx = {
   view: RepoView
   mark?: GitMark
   isTouched: boolean
+  /** The repo's folder name: the first crumb of the path. */
+  repoName?: string
   actions: ViewerActions
   /** Drawn in place of the body and footer: the pane's keyboard Client, where the surface has one. */
   body?: RenderElement
@@ -34,6 +38,15 @@ export type ViewerCtx = {
 const LIMIT = 10000
 /** Rows the chrome (header, meta, toolbar, gap, footer, spare) takes around an image. */
 const CHROME_ROWS = 6
+/** Cells between the divider and the pane's chrome, matching the tree rows' own gutter. */
+const PAD = 1
+/** `‹ back`. */
+const BACK_WIDTH = 6
+/** Cells the engine's close mark covers at the right edge, plus a gap and our `close` label. */
+const CLOSE_RESERVE = 2 + 5 + 1
+
+/** Rows the hooks-drawn chrome takes above the Client: header, breadcrumb, toolbar with the file's facts. */
+export const FILE_CHROME_ROWS = 3
 
 const LANGUAGES: Record<string, string> = {
   ts: 'typescript', tsx: 'typescript', mts: 'typescript', cts: 'typescript',
@@ -80,19 +93,6 @@ function middle(s: string, max: number): string {
   const tail = keep - head
 
   return s.slice(0, head) + '…' + (tail > 0 ? s.slice(s.length - tail) : '')
-}
-
-/** Splits a path into a dim directory part and a bold basename that fit `avail` cells. */
-function fitPath(path: string, avail: number): { dir: string; base: string } {
-  const slash = path.lastIndexOf('/')
-  const dir = path.slice(0, slash + 1)
-  const base = path.slice(slash + 1)
-  if (path.length <= avail) return { dir, base }
-  if (base.length >= avail) return { dir: '', base: middle(base, avail) }
-  const room = avail - base.length
-  if (room < 2) return { dir: '', base }
-
-  return { dir: middle(dir.slice(0, -1), room - 1) + '/', base }
 }
 
 /** Strips what Code and Markdown refuse (all control characters but tab and newline) and caps the length. */
@@ -154,23 +154,36 @@ export function Viewer(el: ElementTable, ctx: ViewerCtx): RenderElement {
   const showingDiff = canDiff && view.showDiff
   const isPaged = isText && !showingDiff && pageCount > 1
 
-  // 1. Header: back, path (dirs dim, basename bold), git mark, touched dot.
+  // 1. Header, the file's tab: back, the file name bold, git mark, touched dot; our close button at
+  // the right (the engine's own dim ✕ covers the last two cells of this row, so it stops short of
+  // them and the two read as one `close ✕`). One cell in from the divider, as the tree's chrome is.
+  const hasClose = columns >= 28
   const tail = (mark ? 2 : 0) + (ctx.isTouched ? 2 : 0)
-  const backWidth = 9 // `b: ‹ back`
-  const path = fitPath(doc.path, Math.max(8, columns - backWidth - 1 - tail))
+  const base = doc.path.slice(doc.path.lastIndexOf('/') + 1)
+  const baseRoom = Math.max(6, columns - PAD - BACK_WIDTH - 1 - tail - (hasClose ? CLOSE_RESERVE : PAD))
   const header = (
-    <Box flexDirection="row" gap={1}>
-      <Button key="back" label="‹ back" plain onPress={() => actions.back()} />
-      <Box flexDirection="row">
-        {path.dir ? <Text dimColor>{path.dir}</Text> : null}
-        <Text bold>{path.base}</Text>
+    <Box flexDirection="row" justifyContent="space-between" paddingLeft={PAD} paddingRight={hasClose ? 2 : PAD}>
+      <Box flexDirection="row" gap={1}>
+        <Button key="back" label="‹ back" plain dimColor onPress={() => actions.back()} />
+        <Text bold wrap="truncate-end">{middle(base, baseRoom)}</Text>
+        {mark ? <Text {...markStyle(mark)}>{mark}</Text> : null}
+        {ctx.isTouched ? <Text color="magenta">●</Text> : null}
       </Box>
-      {mark ? <Text {...markStyle(mark)}>{mark}</Text> : null}
-      {ctx.isTouched ? <Text color="magenta">●</Text> : null}
+      {hasClose ? <Button key="close" plain role="dismiss" label="close" onPress={() => actions.close()} /> : null}
     </Box>
   )
 
-  // 2. Meta line.
+  // 2. Breadcrumb: repo › folders, dim, the last crumb a touch stronger.
+  const crumbs = [...(ctx.repoName ? [ctx.repoName] : []), ...doc.path.split('/').slice(0, -1)]
+  const crumbRoom = Math.max(4, columns - PAD * 2)
+  const crumbText = middle(crumbs.length > 0 ? crumbs.join(' › ') : '·', crumbRoom)
+  const breadcrumb = (
+    <Box paddingLeft={PAD}>
+      <Text dimColor wrap="truncate-end">{crumbText}</Text>
+    </Box>
+  )
+
+  // 3. Toolbar (only the buttons that apply) with the file's facts at its right edge when they fit.
   const parts: string[] = []
   if (isText) {
     parts.push(`${doc.lineCount} ${doc.lineCount === 1 ? 'line' : 'lines'}`)
@@ -193,30 +206,27 @@ export function Viewer(el: ElementTable, ctx: ViewerCtx): RenderElement {
       parts.push('diff vs HEAD')
     }
   }
-  const meta = <Text dimColor wrap="truncate-end">{parts.join(' · ')}</Text>
+  const metaText = parts.join(' · ')
 
-  // 3. Toolbar: only the buttons that apply.
   const buttons: RenderElement[] = []
-  if (isPaged && current > 0) {
-    buttons.push(<Button key="prev" label="‹ prev" plain onPress={() => actions.setPage(current - 1)} />)
+  const labels: string[] = []
+  const add = (key: string, label: string, onPress: () => void) => {
+    labels.push(label)
+    buttons.push(<Button key={key} label={label} plain dimColor onPress={onPress} />)
   }
-  if (isPaged && current < pageCount - 1) {
-    buttons.push(<Button key="next" label="next ›" plain onPress={() => actions.setPage(current + 1)} />)
-  }
-  if (isMarkdown && !showingDiff) {
-    buttons.push(
-      <Button key="raw" label={view.isRaw ? 'rendered' : 'raw'} plain onPress={() => actions.toggleRaw()} />,
-    )
-  }
-  if (canDiff) {
-    buttons.push(
-      <Button key="diff" label={showingDiff ? 'file' : 'diff'} plain onPress={() => actions.toggleDiff()} />,
-    )
-  }
-  buttons.push(<Button key="reveal" label="reveal" plain onPress={() => actions.reveal()} />)
+  if (isPaged && current > 0) add('prev', '‹ prev', () => actions.setPage(current - 1))
+  if (isPaged && current < pageCount - 1) add('next', 'next ›', () => actions.setPage(current + 1))
+  if (isMarkdown && !showingDiff) add('raw', view.isRaw ? 'rendered' : 'raw', () => actions.toggleRaw())
+  if (canDiff) add('diff', showingDiff ? 'file' : 'diff', () => actions.toggleDiff())
+  add('reveal', 'reveal', () => actions.reveal())
+  const buttonsWidth = labels.reduce((w, l) => w + l.length, 0) + 3 * (labels.length - 1)
+  const metaRoom = columns - PAD * 2 - buttonsWidth - 3
   const toolbar = (
-    <Box flexDirection="row" flexWrap="wrap" columnGap={2}>
-      {buttons}
+    <Box flexDirection="row" justifyContent="space-between" paddingX={PAD}>
+      <Box flexDirection="row" flexWrap="wrap" columnGap={3}>
+        {buttons}
+      </Box>
+      {metaRoom >= 8 ? <Text dimColor wrap="truncate-end">{middle(metaText, metaRoom)}</Text> : null}
     </Box>
   )
 
@@ -278,7 +288,7 @@ export function Viewer(el: ElementTable, ctx: ViewerCtx): RenderElement {
     return (
       <Box flexDirection="column">
         {header}
-        {meta}
+        {breadcrumb}
         {toolbar}
         {ctx.body}
       </Box>
@@ -288,7 +298,7 @@ export function Viewer(el: ElementTable, ctx: ViewerCtx): RenderElement {
   return (
     <Box flexDirection="column">
       {header}
-      {meta}
+      {breadcrumb}
       {toolbar}
       <Box flexDirection="column" marginTop={1}>
         {body}

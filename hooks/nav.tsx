@@ -301,6 +301,8 @@ function mergeRuns(runs: Run[]): Run[] {
 /** Width of the right-hand marker cluster (`● M`) plus one gap cell. */
 const MARKER_CELLS = 3
 const MARKER_GAP = 1
+/** Cells kept clear at the right edge, after the markers. */
+const EDGE = 1
 
 /** The styled runs of one tree row, exactly `W` cells wide. */
 function rowRuns(row: NavRow, W: number, isFilter: boolean): Run[] {
@@ -310,7 +312,8 @@ function rowRuns(row: NavRow, W: number, isFilter: boolean): Run[] {
   const mark = !f.isDir && f.mark ? markOf(f.mark) : undefined
   const hasDirDot = f.isDir && f.hasChanges
   const hasMarker = (!!mark || hasDirDot || f.isTouched) && W >= 14
-  const room = hasMarker ? W - MARKER_CELLS - MARKER_GAP : W
+  // A cell of margin at the right edge, as the chrome above keeps, so the markers never touch it.
+  const room = hasMarker ? W - MARKER_CELLS - MARKER_GAP - EDGE : W
 
   // Left side: one gutter cell, indent, chevron, name.
   let prefix = ' '
@@ -341,12 +344,13 @@ function rowRuns(row: NavRow, W: number, isFilter: boolean): Run[] {
 
   const used = prefixW + sumWidth(glyphs)
   if (hasMarker) {
-    runs.push({ s: ' '.repeat(Math.max(0, W - MARKER_CELLS - used)) })
+    runs.push({ s: ' '.repeat(Math.max(0, W - EDGE - MARKER_CELLS - used)) })
     runs.push(f.isTouched ? { s: '●', color: 'magenta' } : { s: ' ' })
     runs.push({ s: ' ' })
     if (mark) runs.push({ s: mark.ch, color: mark.color, dim: mark.dim, bold: mark.bold })
     else if (hasDirDot) runs.push({ s: '•', dim: true })
     else runs.push({ s: ' ' })
+    runs.push({ s: ' '.repeat(EDGE) })
   } else {
     runs.push({ s: ' '.repeat(Math.max(0, W - used)) })
   }
@@ -377,7 +381,7 @@ function renderTree(surface: ClientSurface<NavState>, state: NavState, props: Na
     const isCursor = row[0] === state.cursor
     const runs = rowRuns(row, W, tree.isFiltering)
     lines.push(
-      <Text key={`r:${row[0]}`} wrap="truncate-end" inverse={isCursor}>
+      <Text key={`r:${row[0]}`} wrap="truncate-end" backgroundColor={isCursor ? 'selectionBg' : undefined}>
         {runs.map(r => (
           <Text color={r.color} bold={r.bold} dimColor={r.dim} strikethrough={r.strike}>
             {r.s}

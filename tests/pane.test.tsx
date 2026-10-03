@@ -84,6 +84,42 @@ describe('tree and arrows', () => {
     await ui.unmount()
   })
 
+  test('clearing the finder restores the tree, and the finder takes the keys first', SLOW, async ($, on) => {
+    fixture(on)
+    await $.command.run(run('files'))
+    for (const surface of SURFACES) {
+      const ui = await $.ui.mount(pane(surface))
+      expect((await ui.find({ key: 'filter' }))?.props.autoFocus).toBe(true)
+      const tree = await drawn(ui)
+      await ui.input({ key: 'filter', text: 'regtsx', kind: 'change' })
+      expect(await drawn(ui)).not.toBe(tree)
+      await ui.input({ key: 'filter', text: '', kind: 'change' })
+      expect(await drawn(ui)).toBe(tree)
+      await ui.unmount()
+    }
+  })
+
+  test('leaving a file, then the tree, keeps the pane drawn', SLOW, async ($, on) => {
+    const fx = fixture(on)
+    for (const surface of SURFACES) {
+      await $.command.run(run('files', 'SPEC.md'))
+      const ui = await $.ui.mount(pane(surface, 70))
+      expect(await ui.find({ in: 'nav', type: 'Markdown' })).toBeDefined()
+      // ← out of the file: the whole pane (header and the tree in the Client) is drawn, nothing left over from the file.
+      await ui.key({ key: 'left', in: 'nav' })
+      expect(await ui.find({ key: 'filter' })).toBeDefined()
+      expect(await drawn(ui)).toContain('hooks/')
+      expect(await ui.find({ in: 'nav', type: 'Markdown' })).toBeUndefined()
+      // ← again at the top level hands the keys back: closed and reopened, and still drawn.
+      const closes = fx.seen.closes
+      await ui.key({ key: 'left', in: 'nav' })
+      expect(fx.seen.closes).toBe(closes + 1)
+      expect(fx.open.has('repo-viewer')).toBe(true)
+      expect(await drawn(ui)).toContain('hooks/')
+      await ui.unmount()
+    }
+  })
+
   test('git marks and Claude edits show in the tree', SLOW, async ($, on) => {
     fixture(on)
     on('tool.call', { tool: 'Edit' }, () => ({ result: { filePath: `${ROOT}/README.md` } as never }))
@@ -133,9 +169,12 @@ describe('file view', () => {
     await $.command.run(run('files', 'hooks/repo.ts'))
     const ui = await $.ui.mount(pane('terminal'))
     await ui.press({ key: 'diff' })
-    const diff = await codeIn(ui)
-    expect(diff?.format).toBe('diff')
-    expect(String(diff?.source)).toContain('+export const repo = 1')
+    // Drawn row by row (Code's diff format leaves stray cells behind): old and new line, each padded to the width.
+    const text = await drawn(ui)
+    expect(text).toContain('@@ -1 +1 @@')
+    expect(text).toContain('-export const repo = 0')
+    expect(text).toContain('+export const repo = 1')
+    expect(await codeIn(ui)).toBeUndefined()
     await ui.unmount()
   })
 

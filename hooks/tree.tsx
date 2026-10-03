@@ -17,6 +17,7 @@ export type TreeActions = {
   refresh(): void
   toggleFollow(): void
   openFirstMatch(): void // Enter in the finder
+  close(): void // our own close button, beside the engine's ✕
 }
 
 export type TreeCtx = {
@@ -314,18 +315,34 @@ function repoName(root: string): string {
 
 const n = (value: number): string => value.toLocaleString('en-US')
 
+/** Cells between the divider and the pane's chrome, matching the tree rows' own gutter. */
+const PAD = 1
+/** Cells the engine's close mark covers at the right edge, plus a gap: the header stops short of them. */
+const CLOSE_RESERVE = 2 + 5 + 1
+
+/** The finder gets a rounded border (three rows) when the pane has this many rows to spare. */
+const hasBoxedFinder = (rows: number): boolean => rows >= 16
+
+/** Rows the hooks-drawn chrome takes above the Client: header, counts, finder (1 or 3), toolbar. */
+export const treeChromeRows = (rows: number): number => (hasBoxedFinder(rows) ? 6 : 4)
+
 export function Tree(el: ElementTable, ctx: TreeCtx): RenderElement {
   const { Box, Text, Button } = el
   const W = Math.max(1, ctx.columns)
   const { index, view, actions } = ctx
   const isFilter = view.filter.trim() !== ''
 
-  // 1. Header: repo folder bold, branch dim; then the counts, dim.
+  // 1. Header: repo folder bold, branch dim, our close button at the right (the engine's own dim
+  // ✕ is drawn over the last two cells of this row, so the button stops short of them and the two
+  // read as one `close ✕`). Then the counts, dim. Everything sits one cell in from the divider,
+  // lined up with the tree's chevrons.
+  const hasClose = W >= 28
+  const left = Math.max(4, W - PAD - (hasClose ? CLOSE_RESERVE : PAD))
   let header: RenderElement
   let counts: RenderElement | undefined
   if (index) {
-    const name = fit(repoName(index.root), W)
-    const branchRoom = W - strWidth(name) - 3
+    const name = fit(repoName(index.root), left)
+    const branchRoom = left - strWidth(name) - 3
     const branch = index.isGit && index.branch && branchRoom >= 4 ? fit(index.branch, branchRoom) : ''
     header = (
       <Text wrap="truncate-end">
@@ -337,45 +354,68 @@ export function Tree(el: ElementTable, ctx: TreeCtx): RenderElement {
     if (ctx.changedCount > 0) bits.push(`${n(ctx.changedCount)} changed`)
     if (ctx.touchedCount > 0) bits.push(`${n(ctx.touchedCount)} edited by Claude`)
     counts = (
-      <Text dimColor wrap="truncate-end">
-        {fit(bits.join(' · '), W)}
-      </Text>
+      <Box paddingLeft={PAD}>
+        <Text dimColor wrap="truncate-end">
+          {fit(bits.join(' · '), W - PAD * 2)}
+        </Text>
+      </Box>
     )
   } else {
     header = <Text bold>Repo</Text>
   }
+  const top = (
+    <Box flexDirection="row" justifyContent="space-between" paddingLeft={PAD} paddingRight={hasClose ? 2 : PAD}>
+      {header}
+      {hasClose ? <Button key="close" plain role="dismiss" label="close" onPress={() => actions.close()} /> : null}
+    </Box>
+  )
 
-  // 2. Finder (no Input on the mobile table).
+  // 2. Finder: a search field. Boxed (three rows) when the pane is tall enough to spare them.
+  const isBoxed = hasBoxedFinder(ctx.rows)
   let finder: RenderElement | undefined
   if ('Input' in el) {
     const { Input } = el
-    finder = (
+    // The field sits alone in a column box that grows, so it stretches across the whole box: a click
+    // anywhere in the row focuses it (a field beside a glyph in a row box took only its text's cells).
+    // autoFocus: after ctrl+x tab, a click on the pane or `/files`, the ring starts on the finder.
+    const field = (
       <Input
         key="filter"
-        placeholder="Find file…"
+        placeholder="Filter files…"
         value={view.filter}
+        autoFocus
         onInput={(value: string) => actions.setFilter(value)}
         onSubmit={() => actions.openFirstMatch()}
       />
     )
+    finder = isBoxed ? (
+      <Box paddingX={PAD}>
+        <Box key="finder" flexGrow={1} borderStyle="round" borderDimColor paddingX={1} gap={1} hover={{ borderDimColor: false }}>
+          <Text dimColor>⌕</Text>
+          <Box flexGrow={1} flexDirection="column">
+            {field}
+          </Box>
+        </Box>
+      </Box>
+    ) : (
+      <Box paddingLeft={PAD} gap={1}>
+        <Text dimColor>⌕</Text>
+        <Box flexGrow={1} flexDirection="column">
+          {field}
+        </Box>
+      </Box>
+    )
   }
 
-  // 3. Toolbar.
+  // 3. Toolbar: secondary actions, dim until pointed at or focused.
   const collapseLabel = W >= 44 ? 'collapse all' : 'collapse'
   const toolbar = (
-    <Box flexDirection="row" columnGap={2} flexWrap="wrap">
-      <Button key="tb:refresh" plain label="refresh" onPress={() => actions.refresh()} />
-      <Button
-        key="tb:collapse"
-        plain
-       
-        label={collapseLabel}
-        onPress={() => actions.collapseAll()}
-      />
+    <Box flexDirection="row" columnGap={3} flexWrap="wrap" paddingLeft={PAD}>
+      <Button key="tb:refresh" plain dimColor label="refresh" onPress={() => actions.refresh()} />
+      <Button key="tb:collapse" plain dimColor label={collapseLabel} onPress={() => actions.collapseAll()} />
       <Button
         key="tb:follow"
         plain
-       
         dimColor={!view.follow}
         label={`follow ${view.follow ? 'on' : 'off'}`}
         onPress={() => actions.toggleFollow()}
@@ -427,7 +467,7 @@ export function Tree(el: ElementTable, ctx: TreeCtx): RenderElement {
   if (ctx.body) {
     return (
       <Box flexDirection="column">
-        {header}
+        {top}
         {counts}
         {finder}
         {toolbar}
@@ -443,7 +483,7 @@ export function Tree(el: ElementTable, ctx: TreeCtx): RenderElement {
 
   return (
     <Box flexDirection="column">
-      {header}
+      {top}
       {counts}
       {finder}
       {toolbar}

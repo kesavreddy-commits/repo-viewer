@@ -34,6 +34,7 @@ export function fixture(on: On, files: Record<string, string> = { ...FILES }) {
 
   on('session.cwd', () => value(ROOT))
   on('clock.now', () => value(1_000))
+  on('clock.sleep', () => value(undefined))
   on('ui.panes', () => value([...open].map(id => ({ id, title: id, isShown: true, isFocused: false, isPlaced: true }))))
   on('ui.open', (_$, e) => {
     open.add(e.id)

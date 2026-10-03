@@ -482,6 +482,7 @@ function renderStatus(el: ClientElements, segs: Seg[]): RenderElement {
 
   return (
     <Text wrap="truncate-end">
+      {' '}
       {segs.map(s => (
         <Text {...(s.color ? { color: s.color } : {})} {...(s.dim ? { dimColor: true } : {})} {...(s.bold ? { bold: true } : {})}>
           {s.t}
@@ -578,7 +579,7 @@ function message(el: ClientElements, lines: string[], columns: number, body: num
     <Box flexDirection="column" height={body} width={columns} flexShrink={0} overflow="hidden">
       {lines.slice(0, body).map(l => (
         <Text dimColor wrap="truncate-end">
-          {cut(l, columns)}
+          {' ' + cut(l, Math.max(0, columns - 1))}
         </Text>
       ))}
     </Box>
@@ -618,14 +619,14 @@ function renderedBody(el: ClientElements, s: FileState, f: NavFile, props: NavPr
   if (extent(f).lines.length === 0) return message(el, ['Empty file.'], columns, body)
 
   return (
-    <Box flexDirection="column" width={columns} flexShrink={0}>
-      <Markdown text={markdownSource(f, s.top, body, columns)} />
+    <Box flexDirection="column" width={columns} flexShrink={0} paddingLeft={1}>
+      <Markdown text={markdownSource(f, s.top, body, Math.max(1, columns - 1))} />
     </Box>
   )
 }
 
 function diffBody(el: ClientElements, s: FileState, f: NavFile, props: NavProps): RenderElement {
-  const { Box, Code } = el
+  const { Box } = el
   const { columns, body } = dims(props)
   if (!f.diff) return message(el, ['Loading diff…'], columns, body)
   const hunks = parseHunks(f.diff.hunks)
@@ -639,9 +640,81 @@ function diffBody(el: ClientElements, s: FileState, f: NavFile, props: NavProps)
 
   return (
     <Box flexDirection="column" height={body} width={columns} flexShrink={0} overflow="hidden">
-      <Code source={diffSource(hunks, s.hunk, s.diffTop ?? 0)} format="diff" wrap="truncate-end" />
+      {diffRows(el, diffSource(hunks, s.hunk, s.diffTop ?? 0), columns, body)}
     </Box>
   )
+}
+
+/** `text` cut to `max` terminal cells (a wide character counts two), tabs as two spaces. */
+function cutCells(text: string, max: number): { text: string; cells: number } {
+  let out = ''
+  let cells = 0
+  for (const ch of text.replace(/\t/g, '  ')) {
+    const w = displayCol(ch, ch.length)
+    if (cells + w > max) break
+    out += ch
+    cells += w
+  }
+
+  return { text: out, cells }
+}
+
+/**
+ * The diff drawn row by row: a gutter number (the old line for a removed line, else the new one),
+ * the line's marker and text coloured, every row padded to the full width. The engine's Code
+ * element in diff format leaves cells a shorter row no longer covers as they were, so a diff
+ * drawn through it kept stray tails of the rows (or the file view) it replaced.
+ */
+function diffRows(el: ClientElements, source: string, columns: number, body: number): RenderElement[] {
+  const { Text } = el
+  const lines = source.split('\n')
+  let top = 0
+  for (const l of lines) {
+    const h = HEADER.exec(l)
+    if (h) top = Math.max(top, Number(h[1]), Number(h[2]))
+  }
+  const digits = Math.max(2, String(top + lines.length).length)
+  const gw = columns >= digits + 10 ? digits + 2 : 0
+  const out: RenderElement[] = []
+  let oldN = 0
+  let newN = 0
+  for (const line of lines) {
+    if (out.length >= body) break
+    const m = HEADER.exec(line)
+    if (m) {
+      oldN = Number(m[1])
+      newN = Number(m[2])
+      const head = cutCells(line, columns - 1)
+      out.push(
+        <Text key={`d${out.length}`} wrap="truncate-end">
+          <Text color="cyan" dimColor>{' ' + head.text + ' '.repeat(Math.max(0, columns - 1 - head.cells))}</Text>
+        </Text>,
+      )
+      continue
+    }
+    const mark = line.charAt(0)
+    if (mark === '\\') continue
+    const color = mark === '+' ? 'green' : mark === '-' ? 'red' : undefined
+    let num: number
+    if (mark === '-') num = oldN++
+    else if (mark === '+') num = newN++
+    else {
+      oldN++
+      num = newN++
+    }
+    const shown = mark === '+' || mark === '-' || mark === ' ' ? line.slice(1) : line
+    const text = cutCells(shown, Math.max(0, columns - gw - 2))
+    const gutterText = gw > 0 ? ' ' + String(num).padStart(digits) + ' ' : ' '
+    const pad = ' '.repeat(Math.max(0, columns - gutterText.length - 1 - text.cells))
+    out.push(
+      <Text key={`d${out.length}`} wrap="truncate-end">
+        <Text dimColor>{gutterText}</Text>
+        <Text color={color}>{(color ? mark : ' ') + text.text + pad}</Text>
+      </Text>,
+    )
+  }
+
+  return out
 }
 
 function editGeom(props: NavProps, b: Buffer): { columns: number; gw: number; digits: number; vr: number; vc: number } {
@@ -715,9 +788,9 @@ export function fileRender(el: ClientElements, state: FileState, props: NavProps
   let status: RenderElement
   if (s.buffer) {
     content = editBody(el, s, props)
-    status = editStatus(el, s, props, columns)
+    status = editStatus(el, s, props, columns - 1)
   } else {
-    status = viewStatus(el, s, props, columns)
+    status = viewStatus(el, s, props, columns - 1)
     if (!f) {
       content = message(el, ['Nothing open.'], columns, body)
     } else if (hasDiffView(f)) {

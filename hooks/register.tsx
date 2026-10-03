@@ -18,8 +18,8 @@ import {
   toRepoPath,
   treeRows,
 } from './repo'
-import { Tree } from './tree'
-import { Viewer } from './viewer'
+import { Tree, treeChromeRows } from './tree'
+import { FILE_CHROME_ROWS, Viewer } from './viewer'
 
 const PANE = 'repo-viewer'
 const TOOL = 'mcp__repo-viewer__show_file'
@@ -32,9 +32,9 @@ const POLL_MS = 8000
 const NAV_MAX_TEXT = 90000
 /** Characters of tree rows handed to the Client (its props are bounded at 100,000). */
 const NAV_ROW_BUDGET = 60000
-/** Rows the hooks-drawn chrome takes above the Client: tree header, counts, finder, toolbar; viewer header, meta, toolbar. */
-const TREE_CHROME = 4
-const FILE_CHROME = 3
+/** Rows the hooks-drawn chrome takes above the Client: treeChromeRows (header, counts, finder, toolbar) and
+ * FILE_CHROME_ROWS (viewer header, breadcrumb, toolbar), each drawn beside its own layout in tree.tsx and viewer.tsx. */
+const FILE_CHROME = FILE_CHROME_ROWS
 
 const DEFAULT_VIEW: RepoView = {
   mode: 'tree',
@@ -62,6 +62,8 @@ const setView = ($: Engine, change: (v: RepoView) => RepoView) => update($, view
 /** The terminal's width as last measured, and the width it was when the dock was last sized. */
 let termColumns = 0
 let sizedFor = 0
+/** How many times the pane has drawn: leavePane waits on it to see the reopened pane drawn. */
+let draws = 0
 let widthPercent = 40
 
 /** The dock width to ask for: 40% of the terminal, at least 44 columns so code stays readable, at
@@ -234,7 +236,16 @@ const collapsed = (expanded: string[], dir: string) =>
  * pane gives the prompt the keys, and reopening it unasked puts the pane back without taking them. */
 async function leavePane($: Engine) {
   await $.ui.close({ id: PANE })
+  // Reopening in the same breath as the close can leave the pane placed but never drawn again (a
+  // blank box with only the divider). Let the close settle, reopen, then ask for a redraw until
+  // one has actually happened, rather than trusting a fixed delay.
+  await $.clock.sleep(100)
+  const before = draws
   await openPane($)
+  for (let tries = 0; tries < 8 && draws === before; tries++) {
+    $.ui.invalidate('ui.render')
+    await $.clock.sleep(60)
+  }
 }
 
 /** Writes the Client's buffer back, refusing when the file changed on disk since it was opened. */
@@ -490,6 +501,7 @@ export const register: Register = (on, options) => {
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
+    draws += 1
     const el = $.ui.resolve(e)
     const columns = e.props.bodyColumns
     const rows = e.props.scroll.bodyRows
@@ -565,8 +577,10 @@ export const register: Register = (on, options) => {
         view: current,
         mark: marks[path],
         isTouched: (edits[path] ?? 0) > 0,
+        repoName: baseName(repo.root),
         body,
         actions: {
+          close: () => void $.ui.close({ id: PANE }),
           back: () => void handleOp($, { op: 'back' }),
           setPage: page => void setView($, v => ({ ...v, page: Math.max(0, page) })),
           toggleRaw: () => void setView($, v => ({ ...v, isRaw: !v.isRaw })),
@@ -597,7 +611,7 @@ export const register: Register = (on, options) => {
     if (hasClient) {
       const compact = navRows(listed.rows)
       const total = isFiltering ? Math.max(listed.total, listed.rows.length) : listed.rows.length
-      const height = Math.max(4, rows - TREE_CHROME)
+      const height = Math.max(4, rows - treeChromeRows(rows))
       body = nav(
         {
           ...navBase,
@@ -623,6 +637,7 @@ export const register: Register = (on, options) => {
       actions: {
         press: row => void handleOp($, row.kind === 'dir' ? { op: 'toggle', path: row.path } : { op: 'open', path: row.path }),
         setFilter: query => void setView($, v => ({ ...v, filter: query })),
+        close: () => void $.ui.close({ id: PANE }),
         collapseAll: () => void setView($, v => ({ ...v, expanded: [], filter: '' })),
         refresh: () => {
           void refreshAll($).then(() => $.ui.toast('repo-viewer: refreshed'))
