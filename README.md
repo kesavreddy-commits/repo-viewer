@@ -51,6 +51,44 @@ and whether `follow` was on.
 
 It works in the desktop app's Code tab too; VS Code gets a click-only tree.
 
+## Privacy and safety
+
+repoviewer reads your repo and shows it to you, and changes nothing unless you save a file. In detail:
+
+- **Nothing leaves your machine.** No network calls, no telemetry. When Claude uses the `show_file`
+  tool, all it gets back is one line, like "Showing hooks/register.tsx in the repo pane."
+- **It only runs `git`, and only to read:** `rev-parse` and `symbolic-ref` to find the repo and branch,
+  `ls-files` for the tree (respecting `.gitignore`), `status` for the change marks, and `diff` to show
+  a file's changes. It never commits, checks out or changes your repo.
+- **It only writes the file you save.** Pressing `ctrl+s` in the editor writes that file at its own path,
+  keeping its line endings, and refuses if the file changed on disk in the meantime. It never touches its
+  own folder, your settings or any config file unless you open one and save it yourself. Beyond that it
+  remembers two small things in its own plugin storage: whether you left the pane open, and whether
+  `follow` is on.
+- **Typing in the pane goes to Claude's prompt**, just as if you'd typed it there.
+
+It adds the commands `/files`, `/repo` and `/repoviewer`, and a `show_file` tool Claude can use to open
+a file for you. It doesn't replace or change any of Claude Code's own tools or commands.
+
+<details>
+<summary>Every hook it uses, and what each one does</summary>
+
+- `session.start`: registers the commands and the tool, reads the file list, and opens the pane unless
+  you left it closed. While the pane is open, it re-reads `git status` every 8 seconds.
+- `classic.SessionStart` (after `/clear`, resume or fork): passes the event on, then re-reads the file list.
+- `command.run`: answers its own `/files`, `/repo` and `/repoviewer` only: toggle the pane, or jump to a
+  file, folder or search. No other command reaches it.
+- `ui.message`: handles the pane's own key presses (move, open, edit, save, typed text); everything else
+  passes on.
+- `tool.call` on `show_file`: its own tool, as above.
+- `tool.call` on every other tool: lets the tool run unchanged first. After a successful Edit, Write or
+  NotebookEdit, it marks that file and opens it in the pane if `follow` is on. The tool's result is
+  returned unchanged.
+- `turn.complete`: passes the event on, then refreshes the file list and git marks.
+- `ui.render`: draws its own pane only.
+
+</details>
+
 ## Develop
 
 ```bash

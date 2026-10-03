@@ -57,7 +57,9 @@ const revision = atom({ plugin: 'kesav', key: 'revision' } as const, 0)
 
 type Engine = EngineInterface
 
-const setView = ($: Engine, change: (v: RepoView) => RepoView) => update($, view, change)
+function setView($: Engine, change: (v: RepoView) => RepoView) {
+  return update($, view, change)
+}
 
 /** Choices kept across sessions in $.store: whether the pane was left open, and whether it follows
  * Claude's edits. (Not userConfig: any option there makes every install print "not yet set".) */
@@ -68,6 +70,12 @@ const FOLLOW_KEY = 'follow'
 async function closeByUser($: Engine) {
   await $.ui.close({ id: PANE })
   await $.store.set(OPEN_KEY, false)
+}
+
+/** The toolbar's follow toggle, kept for the sessions after this one too. */
+async function toggleFollow($: Engine) {
+  await setView($, v => ({ ...v, follow: !v.follow }))
+  await $.store.set(FOLLOW_KEY, (await read($, view)).follow)
 }
 
 /** The terminal's width as last measured, and the width it was when the dock was last sized. */
@@ -654,9 +662,7 @@ export const register: Register = on => {
         refresh: () => {
           void refreshAll($).then(() => $.ui.toast('repoviewer: refreshed'))
         },
-        toggleFollow: () => {
-          void setView($, v => ({ ...v, follow: !v.follow })).then(async () => $.store.set(FOLLOW_KEY, (await read($, view)).follow))
-        },
+        toggleFollow: () => void toggleFollow($),
         openFirstMatch: () => {
           void (async () => {
             const [latest, now] = [await read($, index), await read($, view)]

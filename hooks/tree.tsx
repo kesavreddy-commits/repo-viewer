@@ -7,7 +7,7 @@
 // names, the cursor bar) is drawn as small absolutely placed Texts painted over
 // the label's cells; the Button stays the one thing Tab, arrows, Enter and
 // clicks reach.
-import type { ElementTable, RenderElement } from 'claude-code'
+import type { ElementTable, RenderElement, RenderSurface } from 'claude-code'
 import type { GitMark, RepoView, RepoIndex, TreeRow } from '../types'
 
 export type TreeActions = {
@@ -21,7 +21,7 @@ export type TreeActions = {
 }
 
 export type TreeCtx = {
-  surface: import('claude-code').RenderSurface
+  surface: RenderSurface
   columns: number
   rows: number
   index: RepoIndex | null // null → loading
