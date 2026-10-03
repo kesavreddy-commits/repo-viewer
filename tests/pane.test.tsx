@@ -6,7 +6,7 @@ const SURFACES = ['terminal', 'desktop'] as const
 const SLOW = { timeoutMs: 30000 }
 
 const pane = <S extends 'terminal' | 'desktop' | 'vscode'>(surface: S, columns = 60) => ({
-  plugin: 'repo-viewer',
+  plugin: 'kesav',
   surface,
   component: 'Pane' as const,
   requestId: 'repo-viewer',
@@ -192,7 +192,7 @@ describe('file view', () => {
   test('Claude asking to show a file opens it at that line', SLOW, async ($, on) => {
     fixture(on)
     await $.command.run(run('files'))
-    const shown = await $.tool.call({ tool: 'mcp__repo-viewer__show_file', path: 'hooks/register.tsx', line: 850 } as never)
+    const shown = await $.tool.call({ tool: 'mcp__kesav__show_file', path: 'hooks/register.tsx', line: 850 } as never)
     expect(String(shown.result)).toContain('Showing hooks/register.tsx')
     const ui = await $.ui.mount(pane('terminal'))
     expect(String((await codeIn(ui))?.source)).toContain('line849')

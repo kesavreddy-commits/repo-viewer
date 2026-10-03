@@ -26,10 +26,8 @@ claude plugin marketplace add kesavreddy-commits/repo-viewer
 ```
 
 ```bash
-claude plugin install repo-viewer
+claude plugin install kesav@repoviewer
 ```
-
-(If another marketplace you use also has a `repo-viewer`, name this one: `repo-viewer@kesav`.)
 
 Claude Code 2.1.259 or newer. The pane docks on the right in fullscreen mode (`/tui fullscreen`);
 otherwise it sits above the prompt.

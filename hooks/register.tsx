@@ -22,7 +22,7 @@ import { Tree, treeChromeRows } from './tree'
 import { FILE_CHROME_ROWS, Viewer } from './viewer'
 
 const PANE = 'repo-viewer'
-const TOOL = 'mcp__repo-viewer__show_file'
+const TOOL = 'mcp__kesav__show_file'
 /** `/files` is the name the CLI's feature request asked for; `/repo` the short one; `/repo-viewer` its own. */
 const COMMANDS = ['files', 'repo', 'repo-viewer'] as const
 const EDIT_TOOLS = new Set(['Edit', 'Write', 'NotebookEdit'])
@@ -49,11 +49,11 @@ const DEFAULT_VIEW: RepoView = {
   lineAt: 0,
 }
 
-const index = atom({ plugin: 'repo-viewer', key: 'index' } as const, null)
-const git = atom({ plugin: 'repo-viewer', key: 'git' } as const, {})
-const touched = atom({ plugin: 'repo-viewer', key: 'touched' } as const, {})
-const view = atom({ plugin: 'repo-viewer', key: 'view' } as const, DEFAULT_VIEW)
-const revision = atom({ plugin: 'repo-viewer', key: 'revision' } as const, 0)
+const index = atom({ plugin: 'kesav', key: 'index' } as const, null)
+const git = atom({ plugin: 'kesav', key: 'git' } as const, {})
+const touched = atom({ plugin: 'kesav', key: 'touched' } as const, {})
+const view = atom({ plugin: 'kesav', key: 'view' } as const, DEFAULT_VIEW)
+const revision = atom({ plugin: 'kesav', key: 'revision' } as const, 0)
 
 type Engine = EngineInterface
 

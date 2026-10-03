@@ -1,12 +1,12 @@
 {
-  "name": "kesav",
+  "name": "repoviewer",
   "description": "Kesav's Claude Code plugins",
   "owner": {
     "name": "Kesav Reddy Eswaravaka"
   },
   "plugins": [
     {
-      "name": "repo-viewer",
+      "name": "kesav",
       "source": "./",
       "description": "Browse, read and edit your whole repo in a pane beside Claude Code's transcript"
     }

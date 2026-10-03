@@ -161,7 +161,7 @@ export type DocPage = { text: string; startLine: number; pageCount: number }
 
 declare module 'claude-code' {
   interface PluginState {
-    'repo-viewer': {
+    'kesav': {
       index: RepoIndex | null
       /** path → mark, from `git status`. */
       git: Record<string, GitMark>
