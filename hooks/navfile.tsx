@@ -408,6 +408,14 @@ function markdownSource(f: NavFile, top: number, body: number, columns: number):
     // A table's top border and header rule.
     const cost = renderedRows(l, columns) + (isRow && !inTable ? 2 : 0)
     if (rows + cost > body && out.length > 0) break
+    // A table starts only if it fits whole (a cut one draws as an empty bordered row): else it
+    // opens the next screen. One taller than the pane still draws, cut, when it is at the top.
+    if (isRow && !inTable && out.length > 0) {
+      let end = i
+      while (end + 1 < lines.length && lines[end + 1]!.trim().startsWith('|')) end++
+      const tableRows = 3 + (end - i + 1) * 2
+      if (rows + tableRows > body) break
+    }
     if (chars + l.length + 1 > BUDGET && out.length > 0) break
     inTable = isRow
     out.push(l)
@@ -619,7 +627,9 @@ function renderedBody(el: ClientElements, s: FileState, f: NavFile, props: NavPr
   if (extent(f).lines.length === 0) return message(el, ['Empty file.'], columns, body)
 
   return (
-    <Box flexDirection="column" width={columns} flexShrink={0} paddingLeft={1}>
+    // minHeight keeps the status line at the pane's foot when the markdown is short; a fixed height
+    // with overflow hidden would overprint in the terminal, so the source itself is cut to fit.
+    <Box flexDirection="column" width={columns} minHeight={body} flexShrink={0} paddingLeft={1}>
       <Markdown text={markdownSource(f, s.top, body, Math.max(1, columns - 1))} />
     </Box>
   )
