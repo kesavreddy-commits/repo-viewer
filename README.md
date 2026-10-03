@@ -2,6 +2,8 @@
 
 Browse, read and edit your whole repo in a pane beside Claude Code, right in the terminal.
 
+![repo-viewer: the tree, a file, rendered markdown and the editor, docked beside Claude Code](docs/demo.gif)
+
 The Claude desktop app has a file pane; the CLI didn't. **repo-viewer** is a Claude Code
 [mod](https://code.claude.com/docs/en/plugins/mods/overview) that docks one on the right:
 
