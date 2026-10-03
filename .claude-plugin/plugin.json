@@ -1,5 +1,5 @@
 {
-  "name": "repo-view",
+  "name": "canopy",
   "version": "0.1.0",
   "description": "A repo browser pane for the terminal: file tree with git and Claude-edit markers, fuzzy find, syntax-highlighted file view, rendered markdown, diffs and images",
   "types": "./types/index.d.ts",

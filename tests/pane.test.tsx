@@ -6,10 +6,10 @@ const SURFACES = ['terminal', 'desktop'] as const
 const SLOW = { timeoutMs: 30000 }
 
 const pane = (surface: 'terminal' | 'desktop', columns = 60) => ({
-  plugin: 'repo-view',
+  plugin: 'canopy',
   surface,
   component: 'Pane' as const,
-  requestId: 'repo-view',
+  requestId: 'canopy',
   props: {
     title: 'repo',
     isFocused: true,
@@ -20,7 +20,7 @@ const pane = (surface: 'terminal' | 'desktop', columns = 60) => ({
   },
 })
 
-describe('repo-view pane', () => {
+describe('canopy pane', () => {
   test('lists the repo, opens a folder and a file, and goes back', SLOW, async ($, on) => {
     fixture(on)
     await $.command.run(run('files'))
@@ -114,7 +114,7 @@ describe('repo-view pane', () => {
   test('Claude asking to show a file opens it at that line', SLOW, async ($, on) => {
     fixture(on)
     await $.command.run(run('files'))
-    const shown = await $.tool.call({ tool: 'mcp__repo-view__show_file', path: 'hooks/register.tsx', line: 850 } as never)
+    const shown = await $.tool.call({ tool: 'mcp__canopy__show_file', path: 'hooks/register.tsx', line: 850 } as never)
     expect(String(shown.result)).toContain('Showing hooks/register.tsx')
     const ui = await $.ui.mount(pane('terminal'))
     const start = Number((await ui.find({ type: 'Code' }))?.props.startLine)
@@ -138,9 +138,9 @@ describe('repo-view pane', () => {
   test('/files toggles the pane closed', SLOW, async ($, on) => {
     const { open } = fixture(on)
     await $.command.run(run('files'))
-    expect(open.has('repo-view')).toBe(true)
+    expect(open.has('canopy')).toBe(true)
     await $.command.run(run('files'))
-    expect(open.has('repo-view')).toBe(false)
+    expect(open.has('canopy')).toBe(false)
   })
 
   test('a narrow pane still draws', SLOW, async ($, on) => {

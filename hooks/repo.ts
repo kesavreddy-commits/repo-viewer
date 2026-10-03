@@ -1,4 +1,4 @@
-// repo-view data layer: parsing git output, tree rows, fuzzy find, file
+// canopy data layer: parsing git output, tree rows, fuzzy find, file
 // classification and paging, diffs. Pure: no JSX, no Node, no DOM, and no `$`
 // (the engine follows `$` only into functions of the file that holds it, so
 // register.tsx runs the commands and reads the files, and hands the output here).

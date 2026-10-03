@@ -21,8 +21,8 @@ import {
 import { Tree } from './tree'
 import { Viewer } from './viewer'
 
-const PANE = 'repo-view'
-const TOOL = 'mcp__repo-view__show_file'
+const PANE = 'canopy'
+const TOOL = 'mcp__canopy__show_file'
 /** `/files` is the name the CLI's feature request asked for; `/repo` the short one. */
 const COMMANDS = ['repo', 'files'] as const
 const EDIT_TOOLS = new Set(['Edit', 'Write', 'NotebookEdit'])
@@ -38,13 +38,15 @@ const DEFAULT_VIEW: RepoView = {
   isRaw: false,
   showDiff: false,
   follow: true,
+  cursorAt: 0,
+  lineAt: 0,
 }
 
-const index = atom({ plugin: 'repo-view', key: 'index' } as const, null)
-const git = atom({ plugin: 'repo-view', key: 'git' } as const, {})
-const touched = atom({ plugin: 'repo-view', key: 'touched' } as const, {})
-const view = atom({ plugin: 'repo-view', key: 'view' } as const, DEFAULT_VIEW)
-const revision = atom({ plugin: 'repo-view', key: 'revision' } as const, 0)
+const index = atom({ plugin: 'canopy', key: 'index' } as const, null)
+const git = atom({ plugin: 'canopy', key: 'git' } as const, {})
+const touched = atom({ plugin: 'canopy', key: 'touched' } as const, {})
+const view = atom({ plugin: 'canopy', key: 'view' } as const, DEFAULT_VIEW)
+const revision = atom({ plugin: 'canopy', key: 'revision' } as const, 0)
 
 type Engine = EngineInterface
 
@@ -212,7 +214,7 @@ async function runCommand($: Engine, args: string): Promise<{ text?: string }> {
       return {}
     }
     const opened = await $.ui.open({ id: PANE, title, focus: true })
-    return opened.isPlaced ? {} : { text: `repo-view: could not open the pane (${opened.reason})` }
+    return opened.isPlaced ? {} : { text: `canopy: could not open the pane (${opened.reason})` }
   }
 
   const target = await resolveArg($, arg)
@@ -247,7 +249,7 @@ export const register: Register = (on, options) => {
     await $.tool.register({
       name: 'show_file',
       description:
-        "Show a file to the user in the repo-view pane beside the conversation (syntax-highlighted, markdown rendered). Use when the user asks to see, open or look at a file, or to point them at the code you're discussing. Does not return the file's content.",
+        "Show a file to the user in the canopy pane beside the conversation (syntax-highlighted, markdown rendered). Use when the user asks to see, open or look at a file, or to point them at the code you're discussing. Does not return the file's content.",
       inputSchema: {
         type: 'object',
         properties: {
@@ -420,7 +422,7 @@ export const register: Register = (on, options) => {
         setFilter: query => void setView($, v => ({ ...v, filter: query })),
         collapseAll: () => void setView($, v => ({ ...v, expanded: [], filter: '' })),
         refresh: () => {
-          void refreshAll($).then(() => $.ui.toast('repo-view: refreshed'))
+          void refreshAll($).then(() => $.ui.toast('canopy: refreshed'))
         },
         toggleFollow: () => void setView($, v => ({ ...v, follow: !v.follow })),
         openFirstMatch: () => {

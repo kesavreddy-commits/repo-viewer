@@ -182,3 +182,162 @@ Layout:
    Filter mode: show the path with matched ranges highlighted (bold/`cyan`) and dirs dim.
    Cap at 500 drawn rows then a dim `… N more`. Empty states: loading, no matches, empty repo.
 5. A one-line dim hint at the bottom: `↑↓ move · ⏎ open · ctrl+x tab focus`.
+
+---
+
+# v2: keyboard Client, arrow navigation, in-pane editing
+
+The plugin is now **canopy** (state key `canopy`, pane id `canopy`, tool `mcp__canopy__show_file`).
+
+## Why a Client
+
+Buttons can't take arrow keys. A `Client` element can: its surface module gets every key
+(`up down left right return tab backspace delete home end pageup pagedown`, characters, ctrl/shift/meta)
+and pointer events, **once a click has focused it** (verified in the real terminal: Tab never reaches a
+Client; Esc gives the keys back to Claude Code's prompt). So the pane body is ONE `Client` keyed `nav`,
+module `./nav.tsx`, used in both tree and file mode so its focus survives opening and leaving files.
+While the Client has focus, arrows never reach Claude Code (whose ← at the prompt opens past sessions).
+
+Surface module rules (types: grep `export type ClientModule`, `ClientSurface`, `ClientKeyEvent`,
+`ClientPointerEvent`, `ClientElements` in `.claude/types/claude-code.d.ts`):
+- `export default function Nav(props: NavProps, surface: ClientSurface<NavState>): RenderElement`.
+- Elements from `surface.elements` (Box, Text, Button, Input, Select, Link, Code, Markdown; no Client/Image/Raster).
+- No `$`, no timers except `surface.every`. Local state via `surface.state` / `surface.setState` (never
+  setState on every render: three renders in a row each calling setState with no input between unmounts it).
+  Register `surface.onKey` / `surface.onPointer` once, while `surface.state === undefined`; the listeners
+  must read the latest state and props, so keep them in a module-level holder updated each render, or read
+  `surface.state` at call time (it is the live value) and stash the latest props in the state on change.
+- `surface.post(op: NavOp)` reaches the hooks module. **One post per key press**: a later post in the same
+  frame replaces an undelivered one.
+- Importing plain helpers from the plugin works (verified): `import { … } from './editor'`.
+- Nested `<Text>` styling works (`<Text>a <Text inverse>b</Text> c</Text>`).
+- Draw at most `props.rows` rows and `props.columns` columns: every row one line (`wrap="truncate-end"`).
+- `Code.source` / `Markdown.text` ≤ 10000 chars per element.
+
+Contract types (`types/index.d.ts`): `NavProps`, `NavTree`, `NavRow`, `NavFile`, `NavOp`. Do not edit them;
+ask the lead.
+
+## Files
+
+| File | Owner | What |
+| --- | --- | --- |
+| `hooks/editor.ts` | agent A | pure text buffer with cursor, scrolling, undo |
+| `hooks/nav.tsx` | agent B | the Client: state, key/pointer dispatch, tree mode |
+| `hooks/navfile.tsx` | agent C | file mode inside the Client: viewer + editor UI |
+| `hooks/register.tsx` | lead | props, NavOp handling, saving, hotkeys for keyboard-only use |
+
+## hooks/editor.ts (agent A) — pure, no JSX
+
+```ts
+export const TAB_WIDTH = 4
+export type Pos = { row: number; col: number }            // col: UTF-16 index into the line
+export type Buffer = {
+  lines: string[]
+  cursor: Pos
+  /** Desired display column kept across up/down through short lines. */
+  goalCol: number
+  /** First visible line and first visible display column. */
+  top: number
+  left: number
+  isDirty: boolean
+  /** Undo/redo stacks of snapshots { lines, cursor }, capped at 200; typing coalesces into one step per word. */
+  undo: Snapshot[]
+  redo: Snapshot[]
+}
+export function fromText(text: string, cursorRow?: number): Buffer      // '\n' split; trailing '\n' kept on toText
+export function toText(b: Buffer): string
+export type EditKey = { key: string; ctrl?: true; shift?: true; meta?: true }
+/** Apply one key; returns the new buffer (never mutates). Handles: printable chars (insert), return
+ * (split line, carry leading whitespace), backspace, delete (join lines at edges), tab (insert '\t' —
+ * or two spaces if the file's lines mostly indent with spaces: detect once in fromText), left/right
+ * (wrap across lines), up/down (keep goalCol in display columns), home/end, pageup/pagedown (by
+ * `viewRows`), ctrl+left/right or meta+left/right (word jumps), ctrl+z undo, ctrl+y / ctrl+shift+z redo,
+ * ctrl+k delete to end of line, ctrl+u delete to line start. Unknown keys: unchanged. */
+export function applyKey(b: Buffer, k: EditKey, viewRows: number): Buffer
+/** Scroll so the cursor is visible in a viewRows × viewCols window (gutter excluded). */
+export function scrollIntoView(b: Buffer, viewRows: number, viewCols: number): Buffer
+/** The visible window, tabs expanded to TAB_WIDTH: each row's display text (already cut to
+ * [left, left+viewCols)), its 1-based line number, and on the cursor's row the cursor's display column
+ * within the window. */
+export function view(b: Buffer, viewRows: number, viewCols: number):
+  { lineNo: number; text: string; cursorCol?: number }[]
+export function displayCol(line: string, col: number): number          // tabs → TAB_WIDTH stops
+```
+
+## hooks/nav.tsx (agent B) — the Client, tree mode
+
+State (`NavState`, define and export it in nav.tsx):
+`{ cursor: string; cursorAt: number; top: number; file: FileState | undefined; lastProps: NavProps }`.
+`cursor` is the path highlighted in the tree. Adopt `props.cursor` whenever `props.cursorAt` differs from
+the last one seen (the hooks side moved it: reveal, follow, h/j/k/l hotkeys).
+
+Tree keys (when `props.mode === 'tree'`):
+- `up`/`k`, `down`/`j`: move; `pageup`/`pagedown`: by a screen; `home`/`g`, `end`/`G`: ends. Post `{op:'cursor', path}`.
+- `right`/`l`: collapsed dir → `{op:'expand'}`; expanded dir → move to its first child (post cursor);
+  file → `{op:'open'}`.
+- `left`/`h`: expanded dir → `{op:'collapse'}`; otherwise move to the parent dir row (post cursor);
+  at top level, nothing.
+- `return`/space: dir → `{op:'toggle'}`; file → `{op:'open'}`.
+- Pointer: `down` on a row selects it; a `down` on the already-selected row (or a quick second click)
+  toggles/opens it.
+
+Tree drawing (one line per row, fit `props.columns`): indent 2 per depth, `▸ name/` / `▾ name/`,
+files `  name`; right-aligned 3-cell marker cluster: magenta `●` if touched, then the git mark (M yellow,
+A green, ? green dim, D red with name strikethrough, R cyan, U red bold), dirs with changes a dim `•`.
+Filter mode: name = whole path, middle-ellipsised to fit, `matches` ranges bold cyan. Cursor row:
+`inverse` across the row. Scroll: keep the cursor within `top … top + rows - 1` (state.top), draw only
+that window, plus a last dim line `… N more` when `props.tree.more > 0` and the window reaches the end.
+Empty: `No files match "q"` / `Loading files…` (no `props.tree`).
+
+File mode: delegate entirely to navfile.tsx (`fileKey`, `fileRender`, `filePointer` below); nav.tsx owns
+creating/resetting `state.file` with `initFile(props)` when `props.file.path` or `mtimeMs` changes
+(but never while `state.file.buffer` is dirty: then keep the buffer and let navfile show the conflict).
+
+## hooks/navfile.tsx (agent C) — file mode
+
+```ts
+export type FileState = {
+  path: string
+  mtimeMs: number
+  /** View mode: the first visible line (1-based, within the file) and the cursor line. */
+  top: number
+  line: number
+  /** Markdown: rendered (default) or source. Diff: first visible hunk. */
+  hunk: number
+  /** Present while editing. */
+  buffer?: Buffer
+  /** A save was refused because the file changed on disk: the next ctrl+s forces. */
+  isConflict: boolean
+  lineAt: number
+}
+export function initFile(props: NavProps, previous?: FileState): FileState
+export function fileKey(state: FileState, k: ClientKeyEvent, props: NavProps, post: (op: NavOp) => void): FileState
+export function filePointer(state: FileState, p: ClientPointerEvent, props: NavProps, post: (op: NavOp) => void): FileState
+export function fileRender(el: ClientElements, state: FileState, props: NavProps): RenderElement
+```
+
+View mode keys: `up`/`k` `down`/`j` move the cursor line (scrolling), `pageup`/`pagedown`/space, `home`/`g`
+`end`/`G`; `left`/`h` → `{op:'back'}`; `e`/`i`/`return`/`right`/`l` → enter edit mode at the cursor line
+when `file.isEditable` (post `{op:'edit', path, isEditing:true}`), else nothing; `r` → `{op:'raw'}`,
+`d` → `{op:'diff'}`; `n`/`p` → `{op:'page'}` when paged. Adopt `props.line` when `props.lineAt` changes.
+Diff mode: up/down move by hunk, left back to file view (`{op:'diff'}`).
+
+View drawing within `props.rows` × `props.columns`: text → a gutter column of right-aligned line numbers
+(dim; the cursor line's bright with `▸`) beside ONE `Code` element holding exactly the visible lines
+(`path` for highlighting, `wrap="truncate-end"`, no `startLine`), so rows align 1:1. Markdown rendered →
+`Markdown` of the source from the top line (if `top` falls inside a ``` fence, prepend the fence opener),
+enough lines to fill the rows. Diff → `Code format="diff"` of the hunks from `hunk` on (each hunk keeps
+its `@@` header; never cut a hunk header off), or dim "No changes against HEAD.". Image/binary/
+too-large/missing → one dim line saying so and `← back`. Last row: a dim status line:
+view: `← back  e edit  r raw  d diff  · 12/340` ; edit: `EDIT ctrl+s save  ctrl+q done  ctrl+z undo · 12:5`
+plus `● modified` when dirty, and `props.notice` text (tone colors) when newer than entering the mode.
+
+Edit mode: keys go to `applyKey` from editor.ts, except `ctrl+s` → post `{op:'save', path, text, baseMtimeMs:
+state.mtimeMs, force: state.isConflict}`, `ctrl+q` → leave edit mode (if dirty, the first ctrl+q shows
+"unsaved changes — ctrl+q again to discard"; the second discards) and post `{op:'edit', isEditing:false}`.
+When new props arrive for the same path with a newer `mtimeMs`: if the buffer is clean, reload from the
+text; if the text equals the buffer, the save landed: mark clean and adopt the mtime; if dirty and
+different, keep the buffer and show "changed on disk — ctrl+s overwrites" (set isConflict). A notice with
+tone 'warn' containing 'changed' also sets isConflict. Edit drawing: gutter as in view mode, then each
+visible line as plain `Text` (no highlighting) with the cursor cell drawn `inverse` (a space when at end of
+line), using `view()` from editor.ts.
