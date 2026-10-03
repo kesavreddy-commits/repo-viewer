@@ -29,7 +29,7 @@ If it's useful, a ⭐ helps others find it.
 dock on the right; otherwise it sits above the prompt.
 
 ```bash
-claude plugin marketplace add kesavreddy-commits/repo-viewer
+claude plugin marketplace add kesavreddy-commits/repoviewer
 ```
 
 ```bash
@@ -53,7 +53,7 @@ It works in the desktop app's Code tab too; VS Code gets a click-only tree.
 ## Develop
 
 ```bash
-git clone https://github.com/kesavreddy-commits/repo-viewer && cd repo-viewer
+git clone https://github.com/kesavreddy-commits/repoviewer && cd repoviewer
 ```
 
 ```bash
