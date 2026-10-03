@@ -23,6 +23,9 @@ Typing anywhere outside the finder and the editor goes straight to Claude's prom
 
 ## Install
 
+**Requires Claude Code 2.1.259 or newer, in fullscreen mode (`/tui fullscreen`)** for the pane to
+dock on the right; otherwise it sits above the prompt.
+
 ```bash
 claude plugin marketplace add kesavreddy-commits/repo-viewer
 ```
@@ -30,9 +33,6 @@ claude plugin marketplace add kesavreddy-commits/repo-viewer
 ```bash
 claude plugin install kesav@repoviewer
 ```
-
-Claude Code 2.1.259 or newer. The pane docks on the right in fullscreen mode (`/tui fullscreen`);
-otherwise it sits above the prompt.
 
 ## Use
 
