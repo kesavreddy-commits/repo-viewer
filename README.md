@@ -68,8 +68,7 @@ text buffer, `hooks/repo.ts` the parsing; `tree.tsx` and `viewer.tsx` draw the c
 ## Contributors
 
 - [Kesav Reddy Eswaravaka](https://github.com/kesavreddy-commits)
-- Claude (Anthropic), via Claude Code
 
 ## License
 
-MIT
+MIT - Add a reference to my name, Kesav E. and my GitHub username if using this repo for a video
