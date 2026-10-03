@@ -49,7 +49,38 @@ The pane takes 40% of a wide terminal (at least 44 columns, and Claude keeps at 
 divider to change it. There are no settings to configure: it remembers whether you left the pane open
 and whether `follow` was on.
 
+### Examples
+
+1. **Browse:** type `/files`, click the tree, then use `→` to open `hooks/` and a file inside it, and `←`
+   to come back out.
+2. **Jump to a file:** `/files README.md` opens it rendered; `/files hooks` reveals the folder;
+   `/files regtsx` filters the tree down to `hooks/register.tsx`.
+3. **Ask Claude to show you something:** "Show me the file that handles the pane's keys." Claude opens
+   it in the pane with the `show_file` tool.
+4. **Watch Claude work:** with `follow on`, ask Claude to change something ("rename this function and
+   update its callers"). Each file opens in the pane as it's edited, with a magenta `●` in the tree.
+5. **Edit it yourself:** open a file, press `→` to edit, make a change, `ctrl+s` to save, `ctrl+q` when done.
+
 It works in the desktop app's Code tab too; VS Code gets a click-only tree.
+
+## Troubleshooting
+
+- **The pane sits above the prompt, not on the right:** it docks only in fullscreen mode. Run
+  `/tui fullscreen`.
+- **The pane doesn't open when a session starts:** a terminal narrower than about 144 columns waits
+  for you to ask, and if you closed the pane last time, it stays closed. `/files` opens it either way.
+- **The arrow keys go to Claude's prompt:** click the tree first; it then has the arrow keys until you
+  press `Esc` or `←` at the top level.
+- **A file is missing from the tree:** it's ignored by `.gitignore`. Outside a git repo, folders like
+  `node_modules` are skipped. A `+` after the file count means a very large repo's list was cut short.
+  `/files <path>` still opens a file directly.
+- **A save is refused with "changed on disk":** something else changed the file since you opened it.
+  `ctrl+s` again overwrites it; `ctrl+q` leaves without saving.
+- **Nothing happens at all:** check `claude plugin list` shows `kesav@repoviewer` enabled, and that
+  Claude Code is 2.1.259 or newer (`claude --version`). `claude --debug` logs why a plugin didn't load.
+
+Still stuck? [Open an issue](https://github.com/kesavreddy-commits/repoviewer/issues). For a security
+problem, see [SECURITY.md](SECURITY.md) instead.
 
 ## Privacy and safety
 
@@ -129,3 +160,6 @@ text buffer, `hooks/repo.ts` the parsing; `tree.tsx` and `viewer.tsx` draw the c
 ## License
 
 MIT - Add a reference to my name, Kesav E. and my GitHub username if using this repo for a video please!
+
+repoviewer is an independent project, not affiliated with or endorsed by Anthropic. Claude and Claude
+Code are trademarks of Anthropic.

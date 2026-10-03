@@ -427,7 +427,7 @@ export const register: Register = on => {
     await $.tool.register({
       name: 'show_file',
       description:
-        "Show a file to the user in the repoviewer pane beside the conversation (syntax-highlighted, markdown rendered). Use when the user asks to see, open or look at a file, or to point them at the code you're discussing. Does not return the file's content.",
+        "Open a file from the current repo in the repoviewer pane beside the conversation, syntax-highlighted (markdown rendered), optionally at a line. Use only when the user asks to see, open or look at a file. It shows the file to the user; it does not return the file's content to you.",
       inputSchema: {
         type: 'object',
         properties: {
