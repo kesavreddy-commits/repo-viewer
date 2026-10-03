@@ -1,0 +1,20 @@
+{
+  "name": "repo-view",
+  "version": "0.1.0",
+  "description": "A repo browser pane for the terminal: file tree with git and Claude-edit markers, fuzzy find, syntax-highlighted file view, rendered markdown, diffs and images",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "autoOpen": {
+      "type": "boolean",
+      "title": "Open on start",
+      "description": "Dock the repo pane at session start when the terminal is wide enough",
+      "default": true
+    },
+    "follow": {
+      "type": "boolean",
+      "title": "Follow Claude's edits",
+      "description": "Show each file Claude edits in the pane as it happens",
+      "default": true
+    }
+  }
+}
