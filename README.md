@@ -1,10 +1,10 @@
-# repo-viewer
+# repoviewer
 
 Browse, read and edit your whole repo in a pane beside Claude Code, right in the terminal.
 
-![repo-viewer: the tree, a file, rendered markdown and the editor, docked beside Claude Code](docs/demo.gif)
+![repoviewer: the tree, a file, rendered markdown and the editor, docked beside Claude Code](docs/demo.gif)
 
-The Claude desktop app has a file pane; the CLI didn't. **repo-viewer** is a Claude Code
+The Claude desktop app has a file pane; the CLI didn't. **repoviewer** is a Claude Code
 [mod](https://code.claude.com/docs/en/plugins/mods/overview) that docks one on the right:
 
 - **Tree** of the repo (`.gitignore` respected) with git marks (`M A ? D R U`) and a magenta `●` on
@@ -45,8 +45,9 @@ claude plugin install kesav@repoviewer
 | `/files <text>` | fuzzy-find |
 | click the tree | gives it the arrow keys; `Esc` gives them back |
 
-The pane takes 40% of a wide terminal (at least 44 columns, and Claude keeps at least 70). Drag the
-divider to change it, or set `width` in `/config`, beside `autoOpen` and `follow`.
+The pane takes 40% of a wide terminal (at least 44 columns, and Claude keeps at least 70); drag the
+divider to change it. There are no settings to configure: it remembers whether you left the pane open
+and whether `follow` was on.
 
 It works in the desktop app's Code tab too; VS Code gets a click-only tree.
 

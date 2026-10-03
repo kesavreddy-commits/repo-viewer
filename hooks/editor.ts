@@ -1,4 +1,4 @@
-// Pure text-editing buffer for repo-viewer's in-pane editor. No I/O, no JSX, no DOM.
+// Pure text-editing buffer for repoviewer's in-pane editor. No I/O, no JSX, no DOM.
 // Everything is immutable: every function returns new objects and never mutates its input.
 
 export const TAB_WIDTH = 4

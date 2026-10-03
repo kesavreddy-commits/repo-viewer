@@ -24,11 +24,11 @@ const fail = () => value({ exitCode: 1, stdout: '', stderr: 'no', isStdoutTrunca
 const relOf = (path: string) => (path.startsWith(`${ROOT}/`) ? path.slice(ROOT.length + 1) : path)
 
 /** What the plugin did beneath it, for the tests to check. */
-export type Seen = { open: Set<string>; closes: number; filled: string[]; written: Record<string, string> }
+export type Seen = { open: Set<string>; closes: number; filled: string[]; written: Record<string, string>; stored: Record<string, unknown> }
 
 export function fixture(on: On, files: Record<string, string> = { ...FILES }) {
   const open = new Set<string>()
-  const seen: Seen = { open, closes: 0, filled: [], written: {} }
+  const seen: Seen = { open, closes: 0, filled: [], written: {}, stored: {} }
   const mtimes: Record<string, number> = {}
   const isDir = (rel: string) => rel === ROOT || Object.keys(files).some(file => file.startsWith(`${rel}/`))
 
@@ -47,6 +47,11 @@ export function fixture(on: On, files: Record<string, string> = { ...FILES }) {
   })
   on('ui.scroll', () => ({}))
   on('ui.toast', () => value(undefined))
+  on('store.get', (_$, e) => value(seen.stored[e.key]))
+  on('store.set', (_$, e) => {
+    seen.stored[e.key] = e.value
+    return value(undefined)
+  })
 
   on('process.run', (_$, e) => {
     const args = e.argv.filter(arg => arg !== '--no-optional-locks').slice(1).join(' ')

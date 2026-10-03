@@ -1,4 +1,4 @@
-// repo-viewer's keyboard Client: ONE surface module that draws the pane body and
+// repoviewer's keyboard Client: ONE surface module that draws the pane body and
 // takes the person's keys once a click has focused it. Tree mode (arrow-key
 // navigation, scrolling window, git marks) lives here; file mode (viewer and
 // editor) is delegated to ./navfile. The hooks module answers the ops posted

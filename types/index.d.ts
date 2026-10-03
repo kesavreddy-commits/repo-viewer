@@ -1,4 +1,4 @@
-// repo-viewer's type contract: every value it keeps in $.state, and the shapes
+// repoviewer's type contract: every value it keeps in $.state, and the shapes
 // its modules hand each other. Paths are repo-relative with '/' separators.
 
 /** A file's git state: Modified, Added, Deleted, Renamed, untracked (?), conflict (U). */

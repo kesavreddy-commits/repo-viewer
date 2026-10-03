@@ -9,7 +9,7 @@ const pane = <S extends 'terminal' | 'desktop' | 'vscode'>(surface: S, columns =
   plugin: 'kesav',
   surface,
   component: 'Pane' as const,
-  requestId: 'repo-viewer',
+  requestId: 'repoviewer',
   props: {
     title: 'repo',
     isFocused: true,
@@ -65,7 +65,7 @@ describe('tree and arrows', () => {
     const before = fx.seen.closes
     await ui.key({ key: 'left', in: 'nav' })
     expect(fx.seen.closes).toBe(before + 1)
-    expect(fx.open.has('repo-viewer')).toBe(true)
+    expect(fx.open.has('repoviewer')).toBe(true)
 
     await ui.key({ key: 'f', in: 'nav' })
     expect(fx.seen.filled).toEqual(['f'])
@@ -117,7 +117,7 @@ describe('tree and arrows', () => {
       const closes = fx.seen.closes
       await ui.key({ key: 'left', in: 'nav' })
       expect(fx.seen.closes).toBe(closes + 1)
-      expect(fx.open.has('repo-viewer')).toBe(true)
+      expect(fx.open.has('repoviewer')).toBe(true)
       expect(await drawn(ui)).toContain('hooks/')
       await ui.unmount()
     }
@@ -146,12 +146,28 @@ describe('tree and arrows', () => {
     await ui.unmount()
   })
 
-  test('/files toggles the pane closed', SLOW, async ($, on) => {
-    const { open } = fixture(on)
+  test('/files toggles the pane closed, and the next session remembers which', SLOW, async ($, on) => {
+    const { open, stored } = fixture(on)
     await $.command.run(run('files'))
-    expect(open.has('repo-viewer')).toBe(true)
+    expect(open.has('repoviewer')).toBe(true)
+    expect(stored.open).toBe(true)
     await $.command.run(run('files'))
-    expect(open.has('repo-viewer')).toBe(false)
+    expect(open.has('repoviewer')).toBe(false)
+    expect(stored.open).toBe(false)
+  })
+
+  test('the close button and the follow toggle are remembered', SLOW, async ($, on) => {
+    const fx = fixture(on)
+    await $.command.run(run('files'))
+    const ui = await $.ui.mount(pane('terminal'))
+    await ui.press({ key: 'tb:follow' })
+    expect(fx.stored.follow).toBe(false)
+    await ui.press({ key: 'tb:follow' })
+    expect(fx.stored.follow).toBe(true)
+    await ui.press({ key: 'close' })
+    expect(fx.open.has('repoviewer')).toBe(false)
+    expect(fx.stored.open).toBe(false)
+    await ui.unmount()
   })
 })
 

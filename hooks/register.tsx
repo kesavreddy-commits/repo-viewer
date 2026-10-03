@@ -21,10 +21,10 @@ import {
 import { Tree, treeChromeRows } from './tree'
 import { FILE_CHROME_ROWS, Viewer } from './viewer'
 
-const PANE = 'repo-viewer'
+const PANE = 'repoviewer'
 const TOOL = 'mcp__kesav__show_file'
-/** `/files` is the name the CLI's feature request asked for; `/repo` the short one; `/repo-viewer` its own. */
-const COMMANDS = ['files', 'repo', 'repo-viewer'] as const
+/** `/files` is the name the CLI's feature request asked for; `/repo` the short one; `/repoviewer` its own. */
+const COMMANDS = ['files', 'repo', 'repoviewer'] as const
 const EDIT_TOOLS = new Set(['Edit', 'Write', 'NotebookEdit'])
 /** How often the pane notices changes made outside Claude (another editor, a git checkout). */
 const POLL_MS = 8000
@@ -59,19 +59,30 @@ type Engine = EngineInterface
 
 const setView = ($: Engine, change: (v: RepoView) => RepoView) => update($, view, change)
 
+/** Choices kept across sessions in $.store: whether the pane was left open, and whether it follows
+ * Claude's edits. (Not userConfig: any option there makes every install print "not yet set".) */
+const OPEN_KEY = 'open'
+const FOLLOW_KEY = 'follow'
+
+/** The person closed the pane: it stays closed in the sessions after this one too, until /files. */
+async function closeByUser($: Engine) {
+  await $.ui.close({ id: PANE })
+  await $.store.set(OPEN_KEY, false)
+}
+
 /** The terminal's width as last measured, and the width it was when the dock was last sized. */
 let termColumns = 0
 let sizedFor = 0
 /** How many times the pane has drawn: leavePane waits on it to see the reopened pane drawn. */
 let draws = 0
-let widthPercent = 40
+const WIDTH_PERCENT = 40
 
 /** The dock width to ask for: 40% of the terminal, at least 44 columns so code stays readable, at
  * most 100 so a wide screen keeps its transcript, and never leaving Claude under 70 columns. Below
  * that (a terminal of about 115 columns or less) it asks for nothing and the engine's share stands. */
 function paneWidth(): number | undefined {
   if (termColumns <= 0) return undefined
-  const want = Math.min(100, Math.max(44, Math.round((termColumns * widthPercent) / 100)), termColumns - 70)
+  const want = Math.min(100, Math.max(44, Math.round((termColumns * WIDTH_PERCENT) / 100)), termColumns - 70)
   return want >= 44 ? want : undefined
 }
 
@@ -356,11 +367,12 @@ async function runCommand($: Engine, args: string, columns: number): Promise<{ t
 
   if (arg === '') {
     if (isOpen) {
-      await $.ui.close({ id: PANE })
+      await closeByUser($)
       return {}
     }
+    await $.store.set(OPEN_KEY, true)
     const opened = await openPane($, true)
-    return opened.isPlaced ? {} : { text: `repo-viewer: could not open the pane (${opened.reason})` }
+    return opened.isPlaced ? {} : { text: `repoviewer: could not open the pane (${opened.reason})` }
   }
 
   const target = await resolveArg($, arg)
@@ -378,11 +390,12 @@ async function runCommand($: Engine, args: string, columns: number): Promise<{ t
   } else {
     await setView($, v => ({ ...v, mode: 'tree', filter: target.value }))
   }
+  await $.store.set(OPEN_KEY, true)
   await openPane($, true)
   return {}
 }
 
-export const register: Register = (on, options) => {
+export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     for (const name of COMMANDS) {
       await $.command.register({
@@ -396,7 +409,7 @@ export const register: Register = (on, options) => {
     await $.tool.register({
       name: 'show_file',
       description:
-        "Show a file to the user in the repo-viewer pane beside the conversation (syntax-highlighted, markdown rendered). Use when the user asks to see, open or look at a file, or to point them at the code you're discussing. Does not return the file's content.",
+        "Show a file to the user in the repoviewer pane beside the conversation (syntax-highlighted, markdown rendered). Use when the user asks to see, open or look at a file, or to point them at the code you're discussing. Does not return the file's content.",
       inputSchema: {
         type: 'object',
         properties: {
@@ -406,13 +419,12 @@ export const register: Register = (on, options) => {
         required: ['path'],
       },
     })
-    if (options.follow === false) await setView($, v => ({ ...v, follow: false }))
-    if (typeof options.width === 'number' && options.width >= 20 && options.width <= 70) widthPercent = options.width
+    if ((await $.store.get(FOLLOW_KEY)) === false) await setView($, v => ({ ...v, follow: false }))
 
     // Loading the file list can take a moment in a big repo: never hold the first prompt for it.
     $.clock.after(0, () => {
       void refreshAll($).then(async () => {
-        if (options.autoOpen !== false) await openPane($)
+        if ((await $.store.get(OPEN_KEY)) !== false) await openPane($)
       })
     })
     let lastSeen = 0
@@ -441,7 +453,7 @@ export const register: Register = (on, options) => {
 
   on('command.run', { command: 'files' }, ($, e) => runCommand($, e.args, e.presentation.columns))
   on('command.run', { command: 'repo' }, ($, e) => runCommand($, e.args, e.presentation.columns))
-  on('command.run', { command: 'repo-viewer' }, ($, e) => runCommand($, e.args, e.presentation.columns))
+  on('command.run', { command: 'repoviewer' }, ($, e) => runCommand($, e.args, e.presentation.columns))
 
   on('ui.message', async ($, e, next) => {
     if (e.requestId !== PANE || e.element !== 'nav') return next(e)
@@ -580,7 +592,7 @@ export const register: Register = (on, options) => {
         repoName: baseName(repo.root),
         body,
         actions: {
-          close: () => void $.ui.close({ id: PANE }),
+          close: () => void closeByUser($),
           back: () => void handleOp($, { op: 'back' }),
           setPage: page => void setView($, v => ({ ...v, page: Math.max(0, page) })),
           toggleRaw: () => void setView($, v => ({ ...v, isRaw: !v.isRaw })),
@@ -637,12 +649,14 @@ export const register: Register = (on, options) => {
       actions: {
         press: row => void handleOp($, row.kind === 'dir' ? { op: 'toggle', path: row.path } : { op: 'open', path: row.path }),
         setFilter: query => void setView($, v => ({ ...v, filter: query })),
-        close: () => void $.ui.close({ id: PANE }),
+        close: () => void closeByUser($),
         collapseAll: () => void setView($, v => ({ ...v, expanded: [], filter: '' })),
         refresh: () => {
-          void refreshAll($).then(() => $.ui.toast('repo-viewer: refreshed'))
+          void refreshAll($).then(() => $.ui.toast('repoviewer: refreshed'))
         },
-        toggleFollow: () => void setView($, v => ({ ...v, follow: !v.follow })),
+        toggleFollow: () => {
+          void setView($, v => ({ ...v, follow: !v.follow })).then(async () => $.store.set(FOLLOW_KEY, (await read($, view)).follow))
+        },
         openFirstMatch: () => {
           void (async () => {
             const [latest, now] = [await read($, index), await read($, view)]

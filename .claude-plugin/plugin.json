@@ -1,6 +1,6 @@
 {
   "name": "kesav",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Browse, read and edit your whole repo in a pane beside Claude Code's transcript: file tree with git and Claude-edit markers, fuzzy find, highlighted view, markdown, diffs, and an in-pane editor",
   "author": {
     "name": "Kesav Reddy Eswaravaka",
@@ -17,25 +17,5 @@
     "pane",
     "terminal"
   ],
-  "types": "./types/index.d.ts",
-  "userConfig": {
-    "autoOpen": {
-      "type": "boolean",
-      "title": "Open on start",
-      "description": "Dock the repo pane at session start when the terminal is wide enough",
-      "default": true
-    },
-    "follow": {
-      "type": "boolean",
-      "title": "Follow Claude's edits",
-      "description": "Show each file Claude edits in the pane as it happens",
-      "default": true
-    },
-    "width": {
-      "type": "number",
-      "title": "Pane width",
-      "description": "Share of the terminal the docked pane asks for, in percent (20-70; at least 44 columns, and Claude keeps 70). Dragging the divider wins",
-      "default": 40
-    }
-  }
+  "types": "./types/index.d.ts"
 }
