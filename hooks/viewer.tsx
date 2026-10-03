@@ -53,7 +53,7 @@ const LANGUAGES: Record<string, string> = {
   js: 'javascript', jsx: 'javascript', mjs: 'javascript', cjs: 'javascript',
   json: 'json', jsonc: 'json', md: 'markdown', mdx: 'markdown', markdown: 'markdown',
   py: 'python', rb: 'ruby', rs: 'rust', go: 'go', java: 'java', kt: 'kotlin',
-  swift: 'swift', c: 'c', h: 'c', cc: 'c++', cpp: 'c++', hpp: 'c++', cs: 'c#',
+  swift: 'swift', c: 'c', 'h': 'c', cc: 'c++', cpp: 'c++', hpp: 'c++', cs: 'c#',
   php: 'php', lua: 'lua', sh: 'shell', bash: 'shell', zsh: 'shell', fish: 'shell',
   ps1: 'powershell', sql: 'sql', html: 'html', htm: 'html', css: 'css',
   scss: 'scss', less: 'less', xml: 'xml', svg: 'svg', yaml: 'yaml', yml: 'yaml',

@@ -116,24 +116,16 @@ async function notify($: Engine, text: string, tone: 'info' | 'warn' | 'error') 
 // Host I/O. The engine follows `$` only into functions of this file, so every
 // command and read happens here and repo.ts parses what comes back.
 
-async function run($: Engine, argv: string[], cwd: string, timeoutMs = 20000) {
-  try {
-    return await $.process.run(argv, { cwd, timeoutMs })
-  } catch {
-    return undefined
-  }
-}
-
 async function loadIndex($: Engine): Promise<RepoIndex> {
   const cwd = await $.session.cwd().catch(() => '')
   const loadedAt = await $.clock.now().catch(() => 0)
-  const top = await run($, ['git', 'rev-parse', '--show-toplevel'], cwd)
+  const top = await $.process.run(['git', 'rev-parse', '--show-toplevel'], { cwd, timeoutMs: 20000 }).catch(() => undefined)
   const root = top?.exitCode === 0 ? top.stdout.trim() : ''
   if (root !== '') {
     const [ls, sym, sha] = await Promise.all([
-      run($, ['git', '--no-optional-locks', 'ls-files', '-z', '--cached', '--others', '--exclude-standard'], root, 30000),
-      run($, ['git', 'symbolic-ref', '--short', '-q', 'HEAD'], root),
-      run($, ['git', 'rev-parse', '--short', 'HEAD'], root),
+      $.process.run(['git', '--no-optional-locks', 'ls-files', '-z', '--cached', '--others', '--exclude-standard'], { cwd: root, timeoutMs: 30000 }).catch(() => undefined),
+      $.process.run(['git', 'symbolic-ref', '--short', '-q', 'HEAD'], { cwd: root, timeoutMs: 20000 }).catch(() => undefined),
+      $.process.run(['git', 'rev-parse', '--short', 'HEAD'], { cwd: root, timeoutMs: 20000 }).catch(() => undefined),
     ])
     const branch = sym?.exitCode === 0 && sym.stdout.trim() ? sym.stdout.trim() : sha?.exitCode === 0 ? sha.stdout.trim() || undefined : undefined
     if (ls?.exitCode === 0) return { root, isGit: true, branch, ...parseLsFiles(ls.stdout, ls.isStdoutTruncated), loadedAt }
@@ -166,7 +158,7 @@ async function walk($: Engine, root: string): Promise<{ files: string[]; isTrunc
 
 async function loadGitStatus($: Engine, root: string): Promise<Record<string, GitMark>> {
   if (root === '') return {}
-  const status = await run($, ['git', '--no-optional-locks', 'status', '--porcelain=v1', '-z', '--untracked-files=all'], root, 30000)
+  const status = await $.process.run(['git', '--no-optional-locks', 'status', '--porcelain=v1', '-z', '--untracked-files=all'], { cwd: root, timeoutMs: 30000 }).catch(() => undefined)
   return status?.exitCode === 0 ? parseGitStatus(status.stdout, status.isStdoutTruncated) : {}
 }
 
@@ -188,10 +180,15 @@ async function loadDoc($: Engine, root: string, path: string): Promise<FileDoc> 
 }
 
 async function loadDiff($: Engine, root: string, path: string) {
-  const flags = ['--no-color', '--no-ext-diff', '--no-textconv', '--', path]
-  let diff = await run($, ['git', '--no-optional-locks', 'diff', 'HEAD', ...flags], root)
+  let diff = await $.process
+    .run(['git', '--no-optional-locks', 'diff', 'HEAD', '--no-color', '--no-ext-diff', '--no-textconv', '--', path], { cwd: root, timeoutMs: 20000 })
+    .catch(() => undefined)
   // A repo with no commit yet has no HEAD to diff against.
-  if (diff?.exitCode !== 0) diff = await run($, ['git', '--no-optional-locks', 'diff', ...flags], root)
+  if (diff?.exitCode !== 0) {
+    diff = await $.process
+      .run(['git', '--no-optional-locks', 'diff', '--no-color', '--no-ext-diff', '--no-textconv', '--', path], { cwd: root, timeoutMs: 20000 })
+      .catch(() => undefined)
+  }
   return diff?.exitCode === 0 ? parseDiff(diff.stdout, diff.isStdoutTruncated) : undefined
 }
 
@@ -213,6 +210,19 @@ async function refreshAll($: Engine) {
   await update($, index, () => repo)
   await refreshGit($)
   await update($, revision, n => n + 1)
+}
+
+/** /clear, /resume and /branch reset every $.state value and fire no session.start: when the file
+ * list is gone, read it again (once at a time). The pane's drawing and its poll both ask. */
+let isLoading = false
+async function loadIfMissing($: Engine) {
+  if (isLoading || (await read($, index))) return
+  isLoading = true
+  try {
+    await refreshAll($)
+  } finally {
+    isLoading = false
+  }
 }
 
 /** The page of a doc that holds a 1-based line. */
@@ -431,7 +441,7 @@ export const register: Register = on => {
 
     // Loading the file list can take a moment in a big repo: never hold the first prompt for it.
     $.clock.after(0, () => {
-      void refreshAll($).then(async () => {
+      void loadIfMissing($).then(async () => {
         if ((await $.store.get(OPEN_KEY)) !== false) await openPane($)
       })
     })
@@ -439,6 +449,7 @@ export const register: Register = on => {
     $.clock.every(POLL_MS, () => {
       void (async () => {
         if (!(await $.ui.panes()).some(pane => pane.id === PANE)) return
+        await loadIfMissing($)
         await refreshGit($)
         // An open file changed on disk by someone else: re-read it.
         const [repo, current] = [await read($, index), await read($, view)]
@@ -450,13 +461,6 @@ export const register: Register = on => {
     })
 
     return next(e)
-  })
-
-  // /clear, /resume and /branch reset every $.state value and fire no session.start.
-  on('classic.SessionStart', { source: ['clear', 'resume', 'fork'] }, async ($, e, next) => {
-    const done = await next(e)
-    await refreshAll($)
-    return done
   })
 
   on('command.run', { command: 'files' }, ($, e) => runCommand($, e.args, e.presentation.columns))
@@ -526,6 +530,7 @@ export const register: Register = on => {
     const columns = e.props.bodyColumns
     const rows = e.props.scroll.bodyRows
     const [repo, marks, edits, current] = [await read($, index), await read($, git), await read($, touched), await read($, view)]
+    if (!repo) $.clock.after(0, () => void loadIfMissing($))
 
     // Docked: the terminal is the transcript beside the pane, the pane, and the divider between.
     // Size the dock once per terminal width, so a width the person drags stays theirs.

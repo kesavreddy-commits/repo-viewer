@@ -1,6 +1,6 @@
 {
   "name": "kesav",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Browse, read and edit your whole repo in a pane beside Claude Code's transcript: file tree with git and Claude-edit markers, fuzzy find, highlighted view, markdown, diffs, and an in-pane editor",
   "author": {
     "name": "Kesav Reddy Eswaravaka",

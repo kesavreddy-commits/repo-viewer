@@ -55,32 +55,46 @@ It works in the desktop app's Code tab too; VS Code gets a click-only tree.
 
 repoviewer reads your repo and shows it to you, and changes nothing unless you save a file. In detail:
 
-- **Nothing leaves your machine.** No network calls, no telemetry. When Claude uses the `show_file`
-  tool, all it gets back is one line, like "Showing hooks/register.tsx in the repo pane."
-- **It only runs `git`, and only to read:** `rev-parse` and `symbolic-ref` to find the repo and branch,
-  `ls-files` for the tree (respecting `.gitignore`), `status` for the change marks, and `diff` to show
-  a file's changes. It never commits, checks out or changes your repo.
-- **It only writes the file you save.** Pressing `ctrl+s` in the editor writes that file at its own path,
-  keeping its line endings, and refuses if the file changed on disk in the meantime. It never touches its
-  own folder, your settings or any config file unless you open one and save it yourself. Beyond that it
-  remembers two small things in its own plugin storage: whether you left the pane open, and whether
-  `follow` is on.
+- **Nothing leaves your machine.** No network calls, no telemetry. Nothing it reads (your files, git
+  output, the conversation) is sent anywhere. When Claude uses the `show_file` tool, all it gets back is
+  one line, like "Showing hooks/register.tsx in the repo pane."
+- **It only runs `git`, locally, and only to read.** These are the whole commands, run in your repo:
+
+  ```
+  git rev-parse --show-toplevel                 # where the repo is
+  git symbolic-ref --short -q HEAD              # the branch
+  git rev-parse --short HEAD                    # the commit, when there is no branch
+  git --no-optional-locks ls-files -z --cached --others --exclude-standard   # the tree
+  git --no-optional-locks status --porcelain=v1 -z --untracked-files=all     # the change marks
+  git --no-optional-locks diff [HEAD] --no-color --no-ext-diff --no-textconv -- <file>   # a diff
+  ```
+
+  `<file>` is the file whose diff you opened. It never commits, checks out, fetches or changes your repo.
+- **It only writes the file you save.** It's an editor, so it can save any file inside your repo that
+  you open and edit, including build, start-up, settings or instruction files like `package.json`, a
+  `Makefile` or `CLAUDE.md`. It writes only that file, at its own path, only when you press `ctrl+s`,
+  and refuses if the file changed on disk in the meantime. It never writes outside the repo, never to its
+  own folder, and never on its own. Beyond that it keeps two small values in its own plugin storage:
+  whether you left the pane open, and whether `follow` is on.
+- **It doesn't read the conversation.** It uses the end of each turn only as a signal to refresh the
+  tree, and looks at Claude's Edit, Write and NotebookEdit calls only for the path of the file changed.
 - **Typing in the pane goes to Claude's prompt**, just as if you'd typed it there.
 
 It adds the commands `/files`, `/repo` and `/repoviewer`, and a `show_file` tool Claude can use to open
-a file for you. It doesn't replace or change any of Claude Code's own tools or commands.
+a file for you. It answers its own `show_file` calls (that's how a plugin serves its tool), and never
+answers for, replaces or changes any other tool or command.
 
 <details>
 <summary>Every hook it uses, and what each one does</summary>
 
 - `session.start`: registers the commands and the tool, reads the file list, and opens the pane unless
-  you left it closed. While the pane is open, it re-reads `git status` every 8 seconds.
-- `classic.SessionStart` (after `/clear`, resume or fork): passes the event on, then re-reads the file list.
+  you left it closed. While the pane is open, it re-reads `git status` every 8 seconds, and reads the
+  file list again if `/clear`, `/resume` or `/branch` reset it.
 - `command.run`: answers its own `/files`, `/repo` and `/repoviewer` only: toggle the pane, or jump to a
   file, folder or search. No other command reaches it.
 - `ui.message`: handles the pane's own key presses (move, open, edit, save, typed text); everything else
   passes on.
-- `tool.call` on `show_file`: its own tool, as above.
+- `tool.call` on `show_file`: answers its own tool by opening the file in the pane, and returns one line.
 - `tool.call` on every other tool: lets the tool run unchanged first. After a successful Edit, Write or
   NotebookEdit, it marks that file and opens it in the pane if `follow` is on. The tool's result is
   returned unchanged.

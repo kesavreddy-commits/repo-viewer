@@ -128,7 +128,7 @@ function clampView(s: FileState, props: NavProps): FileState {
   const f = props.file
   if (!f || s.buffer) return s
   const { body } = dims(props)
-  const h = Math.max(1, body)
+  const viewRows = Math.max(1, body)
   let { top, line, hunk } = s
   let diffTop = s.diffTop ?? 0
   if (hasDiffView(f)) {
@@ -144,8 +144,8 @@ function clampView(s: FileState, props: NavProps): FileState {
     } else {
       line = clamp(line, start, end)
       if (line < top) top = line
-      else if (line >= top + h) top = line - h + 1
-      top = clamp(top, start, Math.max(start, end - h + 1))
+      else if (line >= top + viewRows) top = line - viewRows + 1
+      top = clamp(top, start, Math.max(start, end - viewRows + 1))
     }
   }
   if (top === s.top && line === s.line && hunk === s.hunk && diffTop === (s.diffTop ?? 0)) return s
@@ -328,12 +328,12 @@ function skipLines(hunk: Hunk, skip: number): string[] {
 function diffSource(hunks: Hunk[], from: number, skip: number): string {
   const out: string[] = []
   let chars = 0
-  for (let h = from; h < hunks.length; h++) {
-    let lines = h === from && skip > 0 ? skipLines(hunks[h]!, skip) : hunks[h]!
+  for (let hunkAt = from; hunkAt < hunks.length; hunkAt++) {
+    let lines = hunkAt === from && skip > 0 ? skipLines(hunks[hunkAt]!, skip) : hunks[hunkAt]!
     lines = lines.map((l, i) => (i === 0 ? l : slice(l, 400)))
     let size = lines.reduce((n, l) => n + l.length + 1, 0)
     if (size > BUDGET - chars) {
-      if (h !== from) break
+      if (hunkAt !== from) break
       // The first hunk alone is too long: keep its leading lines, with the counts to match.
       const body: string[] = []
       let used = (lines[0]?.length ?? 0) + 40
@@ -699,8 +699,8 @@ function diffRows(el: ClientElements, source: string, columns: number, body: num
   const lines = source.split('\n')
   let top = 0
   for (const l of lines) {
-    const h = HEADER.exec(l)
-    if (h) top = Math.max(top, Number(h[1]), Number(h[2]))
+    const hunkHead = HEADER.exec(l)
+    if (hunkHead) top = Math.max(top, Number(hunkHead[1]), Number(hunkHead[2]))
   }
   const digits = Math.max(2, String(top + lines.length).length)
   const gw = columns >= digits + 10 ? digits + 2 : 0
@@ -858,13 +858,13 @@ function setLine(s: FileState, props: NavProps, f: NavFile, line: number): FileS
   const { body } = dims(props)
   const { start, last } = extent(f)
   const end = Math.max(start, last)
-  const h = Math.max(1, body)
+  const viewRows = Math.max(1, body)
   const l = clamp(line, start, end)
   let top = s.top
   if (l < top) top = l
-  else if (l >= top + h) top = l - h + 1
+  else if (l >= top + viewRows) top = l - viewRows + 1
 
-  return { ...s, line: l, top: clamp(top, start, Math.max(start, end - h + 1)) }
+  return { ...s, line: l, top: clamp(top, start, Math.max(start, end - viewRows + 1)) }
 }
 
 /** Moves a screen's worth: the cursor and the window together. */
@@ -872,11 +872,11 @@ function setPage(s: FileState, props: NavProps, f: NavFile, delta: number): File
   const { body } = dims(props)
   const { start, last } = extent(f)
   const end = Math.max(start, last)
-  const h = Math.max(1, body)
-  const top = clamp(s.top + delta, start, Math.max(start, end - h + 1))
+  const viewRows = Math.max(1, body)
+  const top = clamp(s.top + delta, start, Math.max(start, end - viewRows + 1))
   const line = clamp(s.line + delta, start, end)
 
-  return { ...s, top, line: clamp(line, top, Math.min(end, top + h - 1)) }
+  return { ...s, top, line: clamp(line, top, Math.min(end, top + viewRows - 1)) }
 }
 
 function enterEdit(s: FileState, props: NavProps, f: NavFile, post: (op: NavOp) => void): FileState {
@@ -974,7 +974,7 @@ function viewKey(s: FileState, k: ClientKeyEvent, props: NavProps, f: NavFile, p
   if (hasDiffView(f)) return diffKey(s, k, props, f, post)
   const key = k.key
   const { body } = dims(props)
-  const h = Math.max(1, body)
+  const viewRows = Math.max(1, body)
   if (!NO_MODS(k)) return s
   if (key === 'left') {
     post({ op: 'back' })
@@ -1020,18 +1020,18 @@ function viewKey(s: FileState, k: ClientKeyEvent, props: NavProps, f: NavFile, p
 
       return scroll(t)
     }
-    if (key === 'pagedown') return atEnd ? nextPage() : scroll(s.top + Math.max(1, h - 2))
-    if (key === 'pageup') return atStart ? prevPage() : scroll(s.top - Math.max(1, h - 2))
+    if (key === 'pagedown') return atEnd ? nextPage() : scroll(s.top + Math.max(1, viewRows - 2))
+    if (key === 'pageup') return atStart ? prevPage() : scroll(s.top - Math.max(1, viewRows - 2))
     if (key === 'home') return scroll(start)
-    if (key === 'end') return scroll(end - h + 1)
+    if (key === 'end') return scroll(end - viewRows + 1)
 
     return s
   }
 
   if (key === 'down') return setLine(s, props, f, s.line + 1)
   if (key === 'up') return setLine(s, props, f, s.line - 1)
-  if (key === 'pagedown') return atEnd ? nextPage() : setPage(s, props, f, h)
-  if (key === 'pageup') return atStart ? prevPage() : setPage(s, props, f, -h)
+  if (key === 'pagedown') return atEnd ? nextPage() : setPage(s, props, f, viewRows)
+  if (key === 'pageup') return atStart ? prevPage() : setPage(s, props, f, -viewRows)
   if (key === 'home') return setLine(s, props, f, start)
   if (key === 'end') return setLine(s, props, f, end)
 
