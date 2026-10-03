@@ -21,6 +21,8 @@ The Claude desktop app has a file pane; the CLI didn't. **repo-viewer** is a Cla
 
 Typing anywhere outside the finder and the editor goes straight to Claude's prompt.
 
+If it's useful, a ⭐ helps others find it.
+
 ## Install
 
 **Requires Claude Code 2.1.259 or newer, in fullscreen mode (`/tui fullscreen`)** for the pane to
