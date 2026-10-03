@@ -71,4 +71,4 @@ text buffer, `hooks/repo.ts` the parsing; `tree.tsx` and `viewer.tsx` draw the c
 
 ## License
 
-MIT - Add a reference to my name, Kesav E. and my GitHub username if using this repo for a video
+MIT - Add a reference to my name, Kesav E. and my GitHub username if using this repo for a video please!
