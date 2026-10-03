@@ -32,7 +32,7 @@ Fonts are the host's; a mod cannot set them.
 | --- | --- | --- |
 | `types/index.d.ts` | lead | state contract + shared shapes (`RepoIndex`, `RepoView`, `TreeRow`, `FileDoc`, `DocPage`, `GitMark`). Do not edit; ask the lead. |
 | `hooks/register.tsx` | lead | wiring: commands, state atoms, tool.call tracking, render dispatch, actions |
-| `hooks/repo.ts` | agent A | data layer |
+| `hooks/repo.ts` | agent A | data layer: pure parsers (the I/O moved into register.tsx, since the engine follows `$` only within one file) |
 | `hooks/viewer.tsx` | agent B | file viewer component |
 | `hooks/tree.tsx` | agent C | tree / finder component |
 | `tests/*.test.ts(x)` | later | `claude plugin test` |
