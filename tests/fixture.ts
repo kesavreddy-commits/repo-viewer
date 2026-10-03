@@ -6,7 +6,7 @@ export const ROOT = '/repo'
 
 export const FILES: Record<string, string> = {
   'README.md': '# Fixture\n\nA small repo.\n',
-  'SPEC.md': '# Spec\n\n- one\n- two\n\n```ts\nconst x = 1\n```\n',
+  'SPEC.md': '# Spec\n\nA hard\nwrapped line.\n\n- one\n  more\n- two\n\n```ts\nconst x = 1\nconst y = 2\n```\n',
   'hooks/register.tsx': Array.from({ length: 900 }, (_, i) => `export const line${i} = ${i}`).join('\n') + '\n',
   'hooks/repo.ts': 'export const repo = 1\n',
   'assets/logo.png': '\u0089PNG',

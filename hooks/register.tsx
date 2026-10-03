@@ -648,7 +648,11 @@ export const register: Register = (on, options) => {
             const [latest, now] = [await read($, index), await read($, view)]
             if (!latest || now.filter.trim() === '') return
             const first = filterRows(latest, now.filter, await read($, git), await read($, touched), 1).rows[0]
-            if (first) await showFile($, first.path)
+            if (!first) return
+            // Like an editor's quick open, the finder resets once it has opened something: coming
+            // back shows the whole tree (the field itself comes back empty, so a kept query would hide files).
+            await setView($, v => ({ ...v, filter: '' }))
+            await showFile($, first.path)
           })()
         },
       },

@@ -17,6 +17,9 @@ const at = (b: Buffer): [number, number] => [b.cursor.row, b.cursor.col]
 const goto = (b: Buffer, row: number, col: number): Buffer => ({ ...b, cursor: { row, col }, goalCol: displayCol(b.lines[row] ?? '', col) })
 
 describe('editor: text round trip', () => {
+  test('the space key inserts a space', () => {
+    expect(toText(keys(fromText(''), 'a', 'space', 'b'))).toBe('a b')
+  })
   test('toText(fromText(x)) === x', () => {
     for (const x of ['', 'a', 'a\n', 'a\n\nb\n', '\n\n', 'x\r\ny\n']) expect(toText(fromText(x))).toBe(x)
   })

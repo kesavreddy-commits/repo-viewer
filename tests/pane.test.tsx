@@ -81,6 +81,9 @@ describe('tree and arrows', () => {
     expect(await drawn(ui)).not.toContain('README.md')
     await ui.input({ key: 'filter', text: 'regtsx' })
     expect((await codeIn(ui))?.path).toBe('hooks/register.tsx')
+    // Back out of the file: the finder has reset, so the whole tree shows.
+    await ui.key({ key: 'left', in: 'nav' })
+    expect(await drawn(ui)).toContain('README.md')
     await ui.unmount()
   })
 
@@ -161,6 +164,17 @@ describe('file view', () => {
     await ui.press({ key: 'raw' })
     expect(await ui.find({ in: 'nav', type: 'Markdown' })).toBeUndefined()
     expect(await codeIn(ui)).toBeDefined()
+    await ui.unmount()
+  })
+
+  test('hard-wrapped markdown joins into paragraphs, but code keeps its lines', SLOW, async ($, on) => {
+    fixture(on)
+    await $.command.run(run('files', 'SPEC.md'))
+    const ui = await $.ui.mount(pane('terminal', 70))
+    const text = String((await ui.find({ in: 'nav', type: 'Markdown' }))?.props.text)
+    expect(text).toContain('A hard wrapped line.')
+    expect(text).toContain('- one more\n- two')
+    expect(text).toContain('const x = 1\nconst y = 2')
     await ui.unmount()
   })
 

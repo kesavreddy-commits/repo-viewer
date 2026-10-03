@@ -450,7 +450,7 @@ export function applyKey(b: Buffer, k: EditKey, viewRows: number): Buffer {
   if (mod) return b // unhandled ctrl/meta combo: never insert the letter
   if (key.length === 0 || NAMED.has(key) || /^f\d{1,2}$/.test(key)) return b
   if (key.charCodeAt(0) === 0x1b) return b
-  return insertText(b, key)
+  return insertText(b, key === 'space' ? ' ' : key)
 }
 
 function tabArgs(b: Buffer): [string[], Pos] {

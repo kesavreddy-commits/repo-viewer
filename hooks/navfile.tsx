@@ -377,6 +377,15 @@ function fenceOpener(lines: string[], idx: number): string | undefined {
   return open
 }
 
+/** Whether source line `line` continues the paragraph or list item on `prev` (a soft break), which
+ * the renderer would otherwise draw as a line break: hard-wrapped prose breaks mid-sentence. */
+function continues(prev: string, line: string): boolean {
+  const BLOCK = /^\s*([-*+]\s|\d+[.)]\s|#{1,6}\s|>|\||```|~~~|<|(=+|-+|\*+|_+)\s*$)/
+  if (prev.trim() === '' || line.trim() === '') return false
+  if (/^\s*(#{1,6}\s|\||```|~~~|<)/.test(prev) || /( {2}|\\)$/.test(prev)) return false
+  return !BLOCK.test(line)
+}
+
 /** The markdown source drawn from line `top`: enough lines to fill `body` rows (the Box clips the rest), within the limit. */
 /** Rows a markdown source line is likely to take once rendered `columns` wide: wrapped prose, a
  * table row with its rule, a heading with its gap. An estimate that errs tall, since a Markdown that
@@ -404,6 +413,16 @@ function markdownSource(f: NavFile, top: number, body: number, columns: number):
   let inTable = false
   for (let i = idx; i < lines.length; i++) {
     const l = slice(clean(lines[i]!), 2000)
+    const prev = out[out.length - 1]
+    if (prev !== undefined && i > idx && continues(prev, l) && fenceOpener(lines, i) === undefined) {
+      const joined = `${prev.trimEnd()} ${l.trim()}`
+      const grew = renderedRows(joined, columns) - renderedRows(prev, columns)
+      if (rows + grew > body || chars + l.length + 1 > BUDGET) break
+      out[out.length - 1] = joined
+      chars += l.length + 1
+      rows += grew
+      continue
+    }
     const isRow = l.trim().startsWith('|')
     // A table's top border and header rule.
     const cost = renderedRows(l, columns) + (isRow && !inTable ? 2 : 0)
