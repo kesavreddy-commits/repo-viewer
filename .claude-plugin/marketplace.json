@@ -8,7 +8,7 @@
     {
       "name": "kesav",
       "source": "./",
-      "description": "Browse, read and edit your whole repo in a pane beside Claude Code's transcript"
+      "description": "Browse, read and edit your whole repo in a pane beside Claude Code, right in the terminal."
     }
   ]
 }

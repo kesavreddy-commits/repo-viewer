@@ -1,7 +1,8 @@
 {
   "name": "kesav",
   "version": "1.0.4",
-  "description": "Browse, read and edit your whole repo in a pane beside Claude Code's transcript: file tree with git and Claude-edit markers, fuzzy find, highlighted view, markdown, diffs, and an in-pane editor",
+  "displayName": "repoviewer",
+  "description": "Browse, read and edit your whole repo in a pane beside Claude Code, right in the terminal.",
   "author": {
     "name": "Kesav Reddy Eswaravaka",
     "url": "https://github.com/kesavreddy-commits"
@@ -13,12 +14,15 @@
   "privacyPolicyUrl": "https://github.com/kesavreddy-commits/repoviewer#privacy-and-safety",
   "license": "MIT",
   "keywords": [
-    "mod",
     "file-tree",
     "file-browser",
+    "file-viewer",
     "editor",
+    "git",
+    "repo",
     "pane",
-    "terminal"
+    "terminal",
+    "mod"
   ],
   "types": "./types/index.d.ts"
 }
